@@ -27,6 +27,23 @@ const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE;
 
+// Whitelist de grupos permitidos (vazio = aceita todos)
+// Formato: IDs separados por vírgula, ex: "5511999998888-1234567890@g.us,..."
+const ALLOWED_GROUPS = process.env.ALLOWED_GROUPS?.split(',').filter(Boolean) || [];
+
+/**
+ * Verifica se o grupo está na whitelist
+ * @param {string} remoteJid - ID do chat
+ * @returns {boolean}
+ */
+function isGroupAllowed(remoteJid) {
+    // Se não há whitelist configurada, aceita tudo
+    if (ALLOWED_GROUPS.length === 0) return true;
+
+    // Verifica se o grupo está na lista
+    return ALLOWED_GROUPS.some(g => remoteJid.includes(g.trim()));
+}
+
 /**
  * Envia mensagem via Evolution API
  * @param {string} numero - Número do destinatário
@@ -80,6 +97,13 @@ app.post('/webhook', async (req, res) => {
 
         if (!texto || !telefone) {
             return res.json({ success: true, skipped: true });
+        }
+
+        // Filtrar grupos não permitidos (whitelist)
+        const remoteJid = data?.key?.remoteJid;
+        if (isGroup && !isGroupAllowed(remoteJid)) {
+            console.log(`⏭️ Ignorando grupo não autorizado: ${remoteJid}`);
+            return res.json({ success: true, filtered: true });
         }
 
         console.log(`📩 Mensagem de ${telefone}: ${texto}`);
