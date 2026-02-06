@@ -14,7 +14,8 @@ import {
     registrarAtraso,
     getStatusHoje,
     processarOnboarding,
-    logAtividade
+    logAtividade,
+    getMensagemSaldo
 } from './handlers.js';
 
 const app = express();
@@ -106,7 +107,8 @@ app.post('/webhook', async (req, res) => {
                 break;
 
             case 'cancelar':
-                resposta = await cancelarPresenca(membro.id, membro.grupo_id, intent.dias);
+                // Motorista pode cancelar a qualquer momento, membros respeitam limite
+                resposta = await cancelarPresenca(membro.id, membro.grupo_id, intent.dias, ['ida'], membro.is_motorista);
                 break;
 
             case 'atraso':
@@ -119,6 +121,10 @@ app.post('/webhook', async (req, res) => {
 
             case 'status':
                 resposta = await getStatusHoje(membro.grupo_id);
+                break;
+
+            case 'saldo':
+                resposta = await getMensagemSaldo(membro.id, membro.nome);
                 break;
 
             case 'ajuda':

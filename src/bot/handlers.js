@@ -37,40 +37,81 @@ export async function getOrCreateMembro(telefone, whatsappId) {
 
 /**
  * Confirma presença do membro nos dias especificados
+ * Se modelo=por_trajeto, cria débito automaticamente
  * @param {string} membroId 
  * @param {string} grupoId
  * @param {string[]} dias 
+ * @param {string[]} [tipos=['ida']] - Tipos de viagem: 'ida', 'volta', ou ambos
  * @returns {Promise<string>} Mensagem de resposta
  */
-export async function confirmarPresenca(membroId, grupoId, dias) {
+export async function confirmarPresenca(membroId, grupoId, dias, tipos = ['ida']) {
     const hoje = new Date();
     const diasConfirmados = [];
+    let totalDebitos = 0;
+
+    // Buscar configurações do grupo
+    const { data: grupo } = await supabase
+        .from('grupos')
+        .select('modelo_precificacao, valor_trajeto')
+        .eq('id', grupoId)
+        .single();
+
+    const usaDebitoPorTrajeto = grupo?.modelo_precificacao === 'por_trajeto';
+    const valorTrajeto = parseFloat(grupo?.valor_trajeto) || 0;
 
     for (const dia of dias) {
         // Mapear dia para data real
         const dataViagem = getDiaData(dia);
         if (!dataViagem || dataViagem < hoje.toISOString().split('T')[0]) continue;
 
-        // Buscar viagem
-        const { data: viagem } = await supabase
-            .from('viagens')
-            .select('id')
-            .eq('grupo_id', grupoId)
-            .eq('data', dataViagem)
-            .eq('tipo', 'ida')
-            .single();
+        for (const tipo of tipos) {
+            // Buscar viagem
+            const { data: viagem } = await supabase
+                .from('viagens')
+                .select('id')
+                .eq('grupo_id', grupoId)
+                .eq('data', dataViagem)
+                .eq('tipo', tipo)
+                .single();
 
-        if (!viagem) continue;
+            if (!viagem) continue;
 
-        // Inserir ou atualizar presença
-        await supabase
-            .from('presencas')
-            .upsert({
-                viagem_id: viagem.id,
-                membro_id: membroId,
-                status: 'confirmado',
-                confirmado_em: new Date().toISOString()
-            }, { onConflict: 'viagem_id,membro_id' });
+            // Inserir ou atualizar presença
+            const { data: presenca } = await supabase
+                .from('presencas')
+                .upsert({
+                    viagem_id: viagem.id,
+                    membro_id: membroId,
+                    status: 'confirmado',
+                    confirmado_em: new Date().toISOString()
+                }, { onConflict: 'viagem_id,membro_id' })
+                .select()
+                .single();
+
+            // Se modelo por trajeto, criar débito
+            if (usaDebitoPorTrajeto && valorTrajeto > 0 && presenca) {
+                // Verificar se já existe débito para esta presença
+                const { data: debitoExistente } = await supabase
+                    .from('transacoes')
+                    .select('id')
+                    .eq('presenca_id', presenca.id)
+                    .eq('tipo', 'debito')
+                    .single();
+
+                if (!debitoExistente) {
+                    const tipoLabel = tipo === 'ida' ? 'Ida' : 'Volta';
+                    await supabase.from('transacoes').insert({
+                        grupo_id: grupoId,
+                        membro_id: membroId,
+                        presenca_id: presenca.id,
+                        tipo: 'debito',
+                        valor: valorTrajeto,
+                        descricao: `Carona ${dataViagem} (${tipoLabel})`
+                    });
+                    totalDebitos += valorTrajeto;
+                }
+            }
+        }
 
         diasConfirmados.push(DIAS_SEMANA_FULL[dia] || dia);
     }
@@ -79,50 +120,124 @@ export async function confirmarPresenca(membroId, grupoId, dias) {
         return '🤔 Não encontrei viagens para os dias informados.';
     }
 
-    return `✅ Confirmado para ${diasConfirmados.join(', ')}!`;
+    let resposta = `✅ Confirmado para ${diasConfirmados.join(', ')}!`;
+    if (totalDebitos > 0) {
+        resposta += `\n💰 Débito adicionado: R$ ${totalDebitos.toFixed(2)}`;
+    }
+
+    return resposta;
 }
 
 /**
  * Cancela presença do membro nos dias especificados
+ * Verifica janela de cancelamento apenas para membros comuns
+ * Motoristas podem cancelar a qualquer momento
  * @param {string} membroId 
  * @param {string} grupoId
  * @param {string[]} dias 
+ * @param {string[]} [tipos=['ida']] - Tipos de viagem
+ * @param {boolean} [isMotorista=false] - Se true, ignora limite de tempo
  * @returns {Promise<string>}
  */
-export async function cancelarPresenca(membroId, grupoId, dias) {
-    const hoje = new Date();
+export async function cancelarPresenca(membroId, grupoId, dias, tipos = ['ida'], isMotorista = false) {
+    const agora = new Date();
     const diasCancelados = [];
+    const diasBloqueados = [];
+    let debitosRemovidos = 0;
+
+    // Buscar configurações do grupo
+    const { data: grupo } = await supabase
+        .from('grupos')
+        .select('tempo_limite_cancelamento, modelo_precificacao, horario_ida, horario_volta')
+        .eq('id', grupoId)
+        .single();
+
+    const limiteMinutos = grupo?.tempo_limite_cancelamento || 30;
 
     for (const dia of dias) {
         const dataViagem = getDiaData(dia);
-        if (!dataViagem || dataViagem < hoje.toISOString().split('T')[0]) continue;
+        if (!dataViagem || dataViagem < agora.toISOString().split('T')[0]) continue;
 
-        const { data: viagem } = await supabase
-            .from('viagens')
-            .select('id')
-            .eq('grupo_id', grupoId)
-            .eq('data', dataViagem)
-            .eq('tipo', 'ida')
-            .single();
+        for (const tipo of tipos) {
+            const horarioViagem = tipo === 'ida' ? grupo?.horario_ida : grupo?.horario_volta;
 
-        if (!viagem) continue;
+            // Verificar se está dentro da janela de cancelamento (apenas para membros comuns)
+            if (!isMotorista && dataViagem === agora.toISOString().split('T')[0]) {
+                // É hoje - verificar horário
+                const [h, m] = (horarioViagem || '07:00').split(':').map(Number);
+                const horarioLimite = new Date(agora);
+                horarioLimite.setHours(h, m - limiteMinutos, 0, 0);
 
-        await supabase
-            .from('presencas')
-            .upsert({
-                viagem_id: viagem.id,
-                membro_id: membroId,
-                status: 'cancelado'
-            }, { onConflict: 'viagem_id,membro_id' });
+                if (agora >= horarioLimite) {
+                    diasBloqueados.push(`${DIAS_SEMANA_FULL[dia] || dia} (${tipo})`);
+                    continue; // Não pode cancelar, passou do limite
+                }
+            }
+
+            const { data: viagem } = await supabase
+                .from('viagens')
+                .select('id')
+                .eq('grupo_id', grupoId)
+                .eq('data', dataViagem)
+                .eq('tipo', tipo)
+                .single();
+
+            if (!viagem) continue;
+
+            // Buscar presença para remover débito associado
+            const { data: presenca } = await supabase
+                .from('presencas')
+                .select('id')
+                .eq('viagem_id', viagem.id)
+                .eq('membro_id', membroId)
+                .single();
+
+            // Atualizar status para cancelado
+            await supabase
+                .from('presencas')
+                .upsert({
+                    viagem_id: viagem.id,
+                    membro_id: membroId,
+                    status: 'cancelado'
+                }, { onConflict: 'viagem_id,membro_id' });
+
+            // Remover débito associado (se existir e modelo for por_trajeto)
+            if (presenca && grupo?.modelo_precificacao === 'por_trajeto') {
+                const { data: debitoRemovido } = await supabase
+                    .from('transacoes')
+                    .delete()
+                    .eq('presenca_id', presenca.id)
+                    .eq('tipo', 'debito')
+                    .select();
+
+                if (debitoRemovido?.length > 0) {
+                    debitosRemovidos += parseFloat(debitoRemovido[0].valor) || 0;
+                }
+            }
+        }
 
         diasCancelados.push(DIAS_SEMANA_FULL[dia] || dia);
     }
 
-    if (diasCancelados.length === 0) {
+    if (diasCancelados.length === 0 && diasBloqueados.length === 0) {
         return '🤔 Não encontrei viagens para os dias informados.';
     }
 
-    return `❌ Cancelado para ${diasCancelados.join(', ')}.`;
+    let resposta = '';
+
+    if (diasCancelados.length > 0) {
+        resposta += `❌ Cancelado para ${diasCancelados.join(', ')}.`;
+        if (debitosRemovidos > 0) {
+            resposta += `\n💸 Débito removido: R$ ${debitosRemovidos.toFixed(2)}`;
+        }
+    }
+
+    if (diasBloqueados.length > 0) {
+        if (resposta) resposta += '\n\n';
+        resposta += `⏰ Não foi possível cancelar: ${diasBloqueados.join(', ')}.\nPassou do limite de ${limiteMinutos} minutos antes da viagem. Fale com o motorista.`;
+    }
+
+    return resposta;
 }
 
 /**
@@ -309,4 +424,94 @@ export async function logAtividade(membroId, tipoAcao, mensagemOriginal, intenca
             intencao_detectada: intencaoDetectada,
             confianca
         });
+}
+
+/**
+ * Obtém saldo devedor do membro
+ * @param {string} membroId 
+ * @returns {Promise<{saldo: number, debitos: number, pagamentos: number}>}
+ */
+export async function getSaldoMembro(membroId) {
+    const { data } = await supabase
+        .from('vw_saldo_membros')
+        .select('*')
+        .eq('membro_id', membroId)
+        .single();
+
+    if (!data) {
+        return { saldo: 0, debitos: 0, pagamentos: 0 };
+    }
+
+    return {
+        saldo: parseFloat(data.saldo_devedor) || 0,
+        debitos: parseFloat(data.total_debitos) || 0,
+        pagamentos: parseFloat(data.total_pagamentos) || 0
+    };
+}
+
+/**
+ * Retorna mensagem formatada com saldo do membro
+ * @param {string} membroId 
+ * @param {string} nome 
+ * @returns {Promise<string>}
+ */
+export async function getMensagemSaldo(membroId, nome) {
+    const { saldo, debitos, pagamentos } = await getSaldoMembro(membroId);
+
+    if (saldo === 0 && debitos === 0) {
+        return `💰 ${nome}, você não tem débitos pendentes! 🎉`;
+    }
+
+    if (saldo === 0 && debitos > 0) {
+        return `💰 ${nome}, seu saldo está zerado!\nTotal já pago: R$ ${pagamentos.toFixed(2)}`;
+    }
+
+    return `💰 *Saldo de ${nome}*\n\nDébitos: R$ ${debitos.toFixed(2)}\nPagamentos: R$ ${pagamentos.toFixed(2)}\n\n📌 *Pendente: R$ ${saldo.toFixed(2)}*`;
+}
+
+/**
+ * Registra pagamento de um membro (apenas motorista pode usar)
+ * @param {string} grupoId 
+ * @param {string} membroId 
+ * @param {number} valor 
+ * @param {string} [descricao] 
+ * @returns {Promise<string>}
+ */
+export async function registrarPagamento(grupoId, membroId, valor, descricao = 'Pagamento') {
+    // Buscar nome do membro
+    const { data: membro } = await supabase
+        .from('membros')
+        .select('nome')
+        .eq('id', membroId)
+        .single();
+
+    if (!membro) {
+        return '❌ Membro não encontrado.';
+    }
+
+    // Registrar pagamento
+    const { error } = await supabase.from('transacoes').insert({
+        grupo_id: grupoId,
+        membro_id: membroId,
+        tipo: 'pagamento',
+        valor: valor,
+        descricao
+    });
+
+    if (error) {
+        console.error('Erro ao registrar pagamento:', error);
+        return '❌ Erro ao registrar pagamento.';
+    }
+
+    // Buscar novo saldo
+    const { saldo } = await getSaldoMembro(membroId);
+
+    let resposta = `✅ Pagamento de R$ ${valor.toFixed(2)} registrado para ${membro.nome}.`;
+    if (saldo > 0) {
+        resposta += `\n📌 Saldo pendente: R$ ${saldo.toFixed(2)}`;
+    } else {
+        resposta += `\n🎉 Saldo zerado!`;
+    }
+
+    return resposta;
 }

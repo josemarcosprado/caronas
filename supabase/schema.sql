@@ -8,6 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TYPE tipo_viagem AS ENUM ('ida', 'volta');
 CREATE TYPE status_viagem AS ENUM ('agendada', 'em_andamento', 'concluida', 'cancelada');
 CREATE TYPE status_presenca AS ENUM ('confirmado', 'cancelado', 'pendente', 'atrasado');
+CREATE TYPE modelo_precificacao AS ENUM ('semanal', 'por_trajeto');
 
 -- Tabela de Grupos
 CREATE TABLE grupos (
@@ -15,7 +16,10 @@ CREATE TABLE grupos (
     nome VARCHAR(100) NOT NULL,
     whatsapp_group_id VARCHAR(100) UNIQUE,
     motorista_id UUID,
+    modelo_precificacao modelo_precificacao DEFAULT 'semanal',
     valor_semanal DECIMAL(10,2) DEFAULT 0,
+    valor_trajeto DECIMAL(10,2) DEFAULT 0,
+    tempo_limite_cancelamento INTEGER DEFAULT 30, -- minutos antes do horário
     horario_ida TIME DEFAULT '07:00',
     horario_volta TIME DEFAULT '18:00',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -77,6 +81,24 @@ CREATE TABLE logs_atividade (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Tabela de Transações (débitos e pagamentos)
+CREATE TABLE transacoes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    grupo_id UUID REFERENCES grupos(id) ON DELETE CASCADE,
+    membro_id UUID REFERENCES membros(id) ON DELETE CASCADE,
+    presenca_id UUID REFERENCES presencas(id) ON DELETE SET NULL,
+    
+    tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('debito', 'pagamento')),
+    valor DECIMAL(10,2) NOT NULL,
+    descricao TEXT,
+    
+    -- Para validação de comprovantes (PIX futuro)
+    comprovante_url TEXT,
+    comprovante_validado BOOLEAN DEFAULT FALSE,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Indexes para performance
 CREATE INDEX idx_viagens_data ON viagens(data);
 CREATE INDEX idx_viagens_grupo ON viagens(grupo_id);
@@ -84,6 +106,26 @@ CREATE INDEX idx_presencas_viagem ON presencas(viagem_id);
 CREATE INDEX idx_presencas_membro ON presencas(membro_id);
 CREATE INDEX idx_membros_telefone ON membros(telefone);
 CREATE INDEX idx_membros_grupo ON membros(grupo_id);
+CREATE INDEX idx_transacoes_membro ON transacoes(membro_id);
+CREATE INDEX idx_transacoes_grupo ON transacoes(grupo_id);
+CREATE INDEX idx_transacoes_presenca ON transacoes(presenca_id);
+
+-- View para saldo dos membros
+CREATE OR REPLACE VIEW vw_saldo_membros AS
+SELECT 
+    m.id AS membro_id,
+    m.nome,
+    m.grupo_id,
+    g.nome AS grupo_nome,
+    COALESCE(SUM(CASE WHEN t.tipo = 'debito' THEN t.valor ELSE 0 END), 0) AS total_debitos,
+    COALESCE(SUM(CASE WHEN t.tipo = 'pagamento' THEN t.valor ELSE 0 END), 0) AS total_pagamentos,
+    COALESCE(SUM(CASE WHEN t.tipo = 'debito' THEN t.valor ELSE 0 END), 0) 
+        - COALESCE(SUM(CASE WHEN t.tipo = 'pagamento' THEN t.valor ELSE 0 END), 0) AS saldo_devedor
+FROM membros m
+JOIN grupos g ON m.grupo_id = g.id
+LEFT JOIN transacoes t ON m.id = t.membro_id
+WHERE m.ativo = TRUE
+GROUP BY m.id, m.nome, m.grupo_id, g.nome;
 
 -- View para status da semana
 CREATE OR REPLACE VIEW vw_status_semana AS
@@ -114,6 +156,7 @@ ALTER TABLE membros ENABLE ROW LEVEL SECURITY;
 ALTER TABLE viagens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE presencas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE logs_atividade ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transacoes ENABLE ROW LEVEL SECURITY;
 
 -- Políticas básicas (read para todos autenticados no grupo)
 -- Nota: Para o MVP com bot, usaremos service_role key para bypass RLS

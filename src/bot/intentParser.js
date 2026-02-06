@@ -28,6 +28,10 @@ const PATTERNS = {
         /\b(quem vai|como ta|como tá|status|lista|confirmados?)\b/i,
         /\b(quem confirmou|quantos vão|quantos vao)\b/i
     ],
+    saldo: [
+        /\b(quanto devo|meu saldo|devo quanto|minha divida|minha dívida)\b/i,
+        /\b(saldo|débito|debito|pendente|quanto tenho)\b/i
+    ],
     ajuda: [
         /\b(ajuda|help|comandos?|menu|opcoes|opções)\b/i
     ],
@@ -158,6 +162,9 @@ export function getMensagemAjuda() {
 
 📋 *Ver status:*
 "quem vai?", "status", "como tá hoje?"
+
+💰 *Ver saldo:*
+"quanto devo?", "meu saldo"
 
 💡 Você pode usar: seg, ter, qua, qui, sex, hoje, amanhã`;
 }
