@@ -9,6 +9,7 @@ function CreateGroup() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [grupoCriado, setGrupoCriado] = useState(null);
     const [formData, setFormData] = useState({
         nome: '',
         horarioIda: '07:00',
@@ -54,7 +55,7 @@ function CreateGroup() {
             if (grupoError) throw grupoError;
 
             // 2. Criar o motorista como primeiro membro
-            const { error: membroError } = await supabase
+            const { data: membro, error: membroError } = await supabase
                 .from('membros')
                 .insert({
                     grupo_id: grupo.id,
@@ -63,12 +64,29 @@ function CreateGroup() {
                     is_motorista: true,
                     ativo: true,
                     dias_padrao: ['seg', 'ter', 'qua', 'qui', 'sex']
-                });
+                })
+                .select()
+                .single();
 
             if (membroError) throw membroError;
 
-            // 3. Redirecionar para o dashboard do grupo criado
-            navigate(`/g/${grupo.id}`);
+            // 3. Atualizar grupo com motorista_id
+            const { error: updateError } = await supabase
+                .from('grupos')
+                .update({ motorista_id: membro.id })
+                .eq('id', grupo.id);
+
+            if (updateError) console.error('Erro ao atualizar motorista_id:', updateError);
+
+            // 4. Criar viagens da semana
+            await criarViagensSemana(grupo.id, formData.horarioIda, formData.horarioVolta);
+
+            // 5. Salvar dados para tela de sucesso
+            setGrupoCriado({
+                id: grupo.id,
+                nome: grupo.nome,
+                link: `${window.location.origin}/g/${grupo.id}`
+            });
 
         } catch (err) {
             console.error('Erro ao criar grupo:', err);
@@ -78,7 +96,102 @@ function CreateGroup() {
         }
     };
 
+    // Função para criar viagens da semana
+    const criarViagensSemana = async (grupoId, horarioIda, horarioVolta) => {
+        const hoje = new Date();
+        const diaSemana = hoje.getDay(); // 0=dom, 1=seg, ...
+        const viagens = [];
+
+        // Criar viagens para seg-sex desta semana (ou próxima se já passou)
+        for (let dow = 1; dow <= 5; dow++) {
+            let diff = dow - diaSemana;
+            if (diff < 0) diff += 7; // Próxima semana se já passou
+
+            const data = new Date(hoje);
+            data.setDate(hoje.getDate() + diff);
+            const dataStr = data.toISOString().split('T')[0];
+
+            // Viagem de ida
+            viagens.push({
+                grupo_id: grupoId,
+                data: dataStr,
+                tipo: 'ida',
+                horario_partida: horarioIda,
+                status: 'agendada'
+            });
+
+            // Viagem de volta
+            viagens.push({
+                grupo_id: grupoId,
+                data: dataStr,
+                tipo: 'volta',
+                horario_partida: horarioVolta,
+                status: 'agendada'
+            });
+        }
+
+        const { error } = await supabase.from('viagens').insert(viagens);
+        if (error) console.error('Erro ao criar viagens:', error);
+    };
+
+    const copiarLink = () => {
+        navigator.clipboard.writeText(grupoCriado.link);
+        alert('Link copiado!');
+    };
+
     const isPorTrajeto = formData.modeloPrecificacao === 'por_trajeto';
+
+    // Tela de sucesso após criar grupo
+    if (grupoCriado) {
+        return (
+            <div className="login-container">
+                <div className="login-card" style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>🎉</div>
+                    <h1 style={{ fontSize: 'var(--font-size-2xl)', marginBottom: 'var(--space-2)' }}>
+                        Grupo Criado!
+                    </h1>
+                    <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-6)' }}>
+                        <strong>{grupoCriado.nome}</strong> está pronto para uso.
+                    </p>
+
+                    <div style={{
+                        background: 'var(--bg-secondary)',
+                        padding: 'var(--space-3)',
+                        borderRadius: 'var(--radius-md)',
+                        marginBottom: 'var(--space-4)',
+                        wordBreak: 'break-all',
+                        fontSize: 'var(--font-size-sm)'
+                    }}>
+                        {grupoCriado.link}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+                        <button
+                            className="btn btn-secondary"
+                            style={{ flex: 1 }}
+                            onClick={copiarLink}
+                        >
+                            📋 Copiar Link
+                        </button>
+                        <button
+                            className="btn btn-primary"
+                            style={{ flex: 1 }}
+                            onClick={() => navigate(`/g/${grupoCriado.id}`)}
+                        >
+                            📊 Ver Dashboard
+                        </button>
+                    </div>
+
+                    <p style={{
+                        fontSize: 'var(--font-size-sm)',
+                        color: 'var(--text-muted)'
+                    }}>
+                        Compartilhe este link com os membros do grupo.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="login-container">
