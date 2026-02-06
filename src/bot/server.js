@@ -3,6 +3,8 @@
  * Recebe webhooks da Evolution API e processa mensagens
  */
 
+import 'dotenv/config';
+
 import express from 'express';
 import { detectIntent, getMensagemAjuda } from './intentParser.js';
 import {
