@@ -89,18 +89,27 @@ app.post('/webhook', async (req, res) => {
         }
 
         // Extrair informações da mensagem
-        const telefone = data?.key?.remoteJid?.replace('@s.whatsapp.net', '').replace('@g.us', '');
+        const remoteJid = data?.key?.remoteJid;
         const texto = data?.message?.conversation || data?.message?.extendedTextMessage?.text;
-        const isGroup = data?.key?.remoteJid?.includes('@g.us');
-        const grupoId = isGroup ? data?.key?.remoteJid : null;
-        const whatsappId = data?.key?.participant || data?.key?.remoteJid;
+        const isGroup = remoteJid?.includes('@g.us');
+        const grupoId = isGroup ? remoteJid : null;
+
+        // Para responder: usar remoteJid (funciona com LID e números normais)
+        const whatsappId = remoteJid;
+
+        // Para identificar o usuário: extrair número do participant (em grupos) ou do remoteJid
+        const participant = data?.key?.participant;
+        const telefone = (participant || remoteJid)
+            ?.replace('@s.whatsapp.net', '')
+            ?.replace('@g.us', '')
+            ?.replace('@lid', '')
+            ?.replace(/[^0-9]/g, ''); // Manter só números
 
         if (!texto || !telefone) {
             return res.json({ success: true, skipped: true });
         }
 
         // Filtrar grupos não permitidos (whitelist)
-        const remoteJid = data?.key?.remoteJid;
         if (isGroup && !isGroupAllowed(remoteJid)) {
             console.log(`⏭️ Ignorando grupo não autorizado: ${remoteJid}`);
             return res.json({ success: true, filtered: true });
