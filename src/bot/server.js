@@ -32,6 +32,42 @@ const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE;
 const ALLOWED_GROUPS = process.env.ALLOWED_GROUPS?.split(',').filter(Boolean) || [];
 
 /**
+ * Cache para evitar mensagens duplicadas
+ * Chave: whatsappId:hash_da_mensagem
+ * Valor: timestamp
+ */
+const messageCache = new Map();
+const MESSAGE_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
+/**
+ * Verifica se a mensagem já foi enviada recentemente
+ * @param {string} whatsappId - ID do destinatário
+ * @param {string} mensagem - Mensagem a enviar
+ * @returns {boolean} true se é duplicada
+ */
+function isDuplicateMessage(whatsappId, mensagem) {
+    // Limpar cache antigo
+    const now = Date.now();
+    for (const [key, timestamp] of messageCache.entries()) {
+        if (now - timestamp > MESSAGE_CACHE_TTL) {
+            messageCache.delete(key);
+        }
+    }
+
+    // Criar hash simples da mensagem (primeiros 50 chars)
+    const hash = mensagem.substring(0, 50);
+    const cacheKey = `${whatsappId}:${hash}`;
+
+    if (messageCache.has(cacheKey)) {
+        console.log(`⏭️ Evitando mensagem duplicada para ${whatsappId}`);
+        return true;
+    }
+
+    messageCache.set(cacheKey, now);
+    return false;
+}
+
+/**
  * Verifica se o grupo está na whitelist
  * @param {string} remoteJid - ID do chat
  * @returns {boolean}
@@ -48,9 +84,15 @@ function isGroupAllowed(remoteJid) {
  * Envia mensagem via Evolution API
  * @param {string} numero - Número do destinatário
  * @param {string} texto - Mensagem a enviar
+ * @param {boolean} [checkDuplicate=true] - Se deve verificar duplicatas
  */
-async function enviarMensagem(numero, texto) {
+async function enviarMensagem(numero, texto, checkDuplicate = true) {
     try {
+        // Evitar mensagens duplicadas (exceto para respostas importantes)
+        if (checkDuplicate && isDuplicateMessage(numero, texto)) {
+            return;
+        }
+
         const response = await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
             method: 'POST',
             headers: {

@@ -14,14 +14,21 @@ import { DIAS_SEMANA_FULL } from '../lib/database.types.js';
  * @returns {Promise<import('../lib/database.types.js').Membro|null>}
  */
 export async function getOrCreateMembro(telefone, whatsappId) {
+    console.log(`🔍 Buscando membro com telefone: "${telefone}"`);
+
     // Buscar membro existente
-    const { data: membro } = await supabase
+    const { data: membro, error } = await supabase
         .from('membros')
         .select('*, grupos(*)')
         .eq('telefone', telefone)
         .single();
 
+    if (error && error.code !== 'PGRST116') { // PGRST116 = not found
+        console.log(`❌ Erro ao buscar membro: ${error.message}`);
+    }
+
     if (membro) {
+        console.log(`✅ Membro encontrado: ${membro.nome} (grupo: ${membro.grupos?.nome || 'sem grupo'})`);
         // Atualizar whatsapp_id se necessário
         if (!membro.whatsapp_id && whatsappId) {
             await supabase
@@ -32,6 +39,7 @@ export async function getOrCreateMembro(telefone, whatsappId) {
         return membro;
     }
 
+    console.log(`⚠️ Membro não encontrado para telefone: "${telefone}"`);
     return null;
 }
 
