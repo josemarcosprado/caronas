@@ -6,7 +6,7 @@
 import 'dotenv/config';
 
 import express from 'express';
-import { detectIntent, getMensagemAjuda } from './intentParser.js';
+import { detectIntent, getMensagemAjuda, getSaudacao } from './intentParser.js';
 import {
     getOrCreateMembro,
     confirmarPresenca,
@@ -87,17 +87,6 @@ app.post('/webhook', async (req, res) => {
         if (data?.key?.fromMe) {
             return res.json({ success: true, ignored: true });
         }
-
-        // DEBUG: Ver estrutura completa do payload
-        console.log('🔍 DEBUG payload:', JSON.stringify({
-            remoteJid: data?.key?.remoteJid,
-            participant: data?.key?.participant,
-            senderPn: data?.senderPn,
-            pushName: data?.pushName,
-            verifiedBizName: data?.verifiedBizName,
-            // ver todas as chaves do objeto data
-            dataKeys: Object.keys(data || {})
-        }, null, 2));
 
         // Extrair informações da mensagem
         const remoteJid = data?.key?.remoteJid;
@@ -181,13 +170,17 @@ app.post('/webhook', async (req, res) => {
                 resposta = await getMensagemSaldo(membro.id, membro.nome);
                 break;
 
-            case 'ajuda':
             case 'saudacao':
-                resposta = getMensagemAjuda();
+                // Saudação rápida e amigável
+                resposta = `${getSaudacao()}, ${membro.nome}! 👋\n\nPosso te ajudar com sua carona. Digite *ajuda* para ver o que posso fazer!`;
+                break;
+
+            case 'ajuda':
+                resposta = getMensagemAjuda(membro.nome);
                 break;
 
             default:
-                resposta = `🤔 Não entendi. Tente:\n• "vou hoje"\n• "não vou terça"\n• "quem vai?"\n• "ajuda"`;
+                resposta = `🤔 Não entendi, ${membro.nome}. Tente:\n• *"vou hoje"* - confirmar presença\n• *"não vou"* - cancelar\n• *"quem vai?"* - ver status\n• *"ajuda"* - ver comandos`;
         }
 
         // Logar atividade

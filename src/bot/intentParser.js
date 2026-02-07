@@ -145,26 +145,50 @@ export function detectIntent(text) {
 }
 
 /**
- * Gera mensagem de ajuda
+ * Gera saudação baseada no horário
  * @returns {string}
  */
-export function getMensagemAjuda() {
-    return `🚗 *Cajurona - Comandos*
+export function getSaudacao() {
+    const hora = new Date().getHours();
+    if (hora >= 5 && hora < 12) return 'Bom dia';
+    if (hora >= 12 && hora < 18) return 'Boa tarde';
+    return 'Boa noite';
+}
+
+/**
+ * Gera mensagem de ajuda personalizada
+ * @param {string} [nome] - Nome do usuário (opcional)
+ * @returns {string}
+ */
+export function getMensagemAjuda(nome) {
+    const saudacao = getSaudacao();
+    const cumprimento = nome ? `${saudacao}, ${nome}! ` : `${saudacao}! `;
+
+    return `${cumprimento}🚗 *Sou o Cajurona!*
+
+Posso te ajudar a gerenciar suas caronas. Veja o que posso fazer:
 
 ✅ *Confirmar presença:*
-"vou hoje", "confirmado seg e qua", "to dentro"
+• "vou hoje"
+• "confirmado seg e qua"
+• "to dentro"
 
 ❌ *Cancelar:*
-"não vou hoje", "fora terça", "cancela"
+• "não vou hoje"
+• "fora terça"
 
 ⏰ *Avisar atraso:*
-"vou atrasar 10min", "chego 7:20"
+• "vou atrasar 10min"
+• "chego 7:20"
 
-📋 *Ver status:*
-"quem vai?", "status", "como tá hoje?"
+📋 *Ver quem vai:*
+• "quem vai?"
+• "status"
 
 💰 *Ver saldo:*
-"quanto devo?", "meu saldo"
+• "quanto devo?"
+• "meu saldo"
 
-💡 Você pode usar: seg, ter, qua, qui, sex, hoje, amanhã`;
+💡 _Dica: use seg, ter, qua, qui, sex, hoje ou amanhã_`;
 }
+

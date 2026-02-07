@@ -352,7 +352,14 @@ export async function processarOnboarding(texto, telefone, grupoWhatsappId) {
         .single();
 
     if (!grupo) {
-        return '❌ Grupo não cadastrado. Peça ao motorista para configurar.';
+        return `👋 Olá! Eu sou o *Cajurona*, seu assistente de caronas!
+
+Parece que você ainda não faz parte de nenhum grupo de carona cadastrado.
+
+📝 *Para começar:*
+Peça ao motorista do seu grupo para te adicionar, ou entre em um grupo de carona e me envie uma mensagem lá.
+
+💡 Se você é motorista e quer cadastrar seu grupo, acesse o painel web.`;
     }
 
     // Criar membro
