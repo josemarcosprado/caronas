@@ -19,7 +19,7 @@ export async function getOrCreateMembro(telefone, whatsappId) {
     // Buscar membro existente
     const { data: membro, error } = await supabase
         .from('membros')
-        .select('*, grupos(*)')
+        .select('*, grupos!membros_grupo_id_fkey(*)')
         .eq('telefone', telefone)
         .single();
 
