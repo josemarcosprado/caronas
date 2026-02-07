@@ -88,14 +88,35 @@ app.post('/webhook', async (req, res) => {
             return res.json({ success: true, ignored: true });
         }
 
+        // DEBUG: Ver estrutura completa do payload
+        console.log('🔍 DEBUG payload:', JSON.stringify({
+            remoteJid: data?.key?.remoteJid,
+            participant: data?.key?.participant,
+            senderPn: data?.senderPn,
+            pushName: data?.pushName,
+            verifiedBizName: data?.verifiedBizName,
+            // ver todas as chaves do objeto data
+            dataKeys: Object.keys(data || {})
+        }, null, 2));
+
         // Extrair informações da mensagem
         const remoteJid = data?.key?.remoteJid;
         const texto = data?.message?.conversation || data?.message?.extendedTextMessage?.text;
         const isGroup = remoteJid?.includes('@g.us');
         const grupoId = isGroup ? remoteJid : null;
+        const isLid = remoteJid?.includes('@lid');
 
-        // Para responder: usar remoteJid (funciona com LID e números normais)
-        const whatsappId = remoteJid;
+        // senderPn pode conter o número real quando o remoteJid é LID
+        const senderPn = data?.senderPn || data?.pushName;
+
+        // Para responder: preferir número real se disponível, senão usar remoteJid
+        let whatsappId = remoteJid;
+        if (isLid && senderPn && /^\d+$/.test(senderPn.replace(/\D/g, ''))) {
+            // Se temos um número real no senderPn, usar ele com formato correto
+            const numeroLimpo = senderPn.replace(/\D/g, '');
+            whatsappId = `${numeroLimpo}@s.whatsapp.net`;
+            console.log(`🔄 LID detectado, usando número real: ${whatsappId}`);
+        }
 
         // Para identificar o usuário: extrair número do participant (em grupos) ou do remoteJid
         const participant = data?.key?.participant;
