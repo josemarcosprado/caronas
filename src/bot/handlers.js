@@ -6,6 +6,7 @@
 import { supabase } from '../lib/supabase.js';
 import { getMensagemAjuda } from './intentParser.js';
 import { DIAS_SEMANA_FULL } from '../lib/database.types.js';
+import { getPhoneLookupFormats } from '../lib/phoneUtils.js';
 
 /**
  * Obtém ou cria membro pelo telefone
@@ -16,11 +17,16 @@ import { DIAS_SEMANA_FULL } from '../lib/database.types.js';
 export async function getOrCreateMembro(telefone, whatsappId) {
     console.log(`🔍 Buscando membro com telefone: "${telefone}"`);
 
-    // Buscar membro existente
+    // Gerar todos os formatos possíveis para busca
+    const telefonesParaBuscar = getPhoneLookupFormats(telefone);
+    console.log(`🔍 Tentando formatos: ${telefonesParaBuscar.join(', ')}`);
+
+    // Buscar membro existente em qualquer formato
     const { data: membro, error } = await supabase
         .from('membros')
         .select('*, grupos!membros_grupo_id_fkey(*)')
-        .eq('telefone', telefone)
+        .in('telefone', telefonesParaBuscar)
+        .limit(1)
         .single();
 
     if (error && error.code !== 'PGRST116') { // PGRST116 = not found

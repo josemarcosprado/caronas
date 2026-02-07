@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
+import { validatePhone } from '../lib/phoneUtils.js';
+import PhoneInput from './PhoneInput.jsx';
 
 /**
  * Componente para criar um novo grupo de caronas
@@ -32,6 +34,14 @@ function CreateGroup() {
         setLoading(true);
         setError('');
 
+        // Validate phone before submitting
+        const phoneValidation = validatePhone(formData.motoristaTelefone);
+        if (!phoneValidation.valid) {
+            setError(`Telefone inválido: ${phoneValidation.error}`);
+            setLoading(false);
+            return;
+        }
+
         try {
             // 1. Criar o grupo
             const { data: grupo, error: grupoError } = await supabase
@@ -60,7 +70,7 @@ function CreateGroup() {
                 .insert({
                     grupo_id: grupo.id,
                     nome: formData.motoristaNome,
-                    telefone: formData.motoristaTelefone.replace(/\D/g, ''),
+                    telefone: phoneValidation.normalized.replace('+', ''), // Store without + for consistency
                     is_motorista: true,
                     ativo: true,
                     dias_padrao: ['seg', 'ter', 'qua', 'qui', 'sex']
@@ -207,7 +217,7 @@ function CreateGroup() {
                             type="text"
                             name="nome"
                             className="form-input"
-                            placeholder="Ex: Carona UFMG Engenharia"
+                            placeholder="Ex: Carona UFS Computação"
                             value={formData.nome}
                             onChange={handleChange}
                             required
@@ -229,15 +239,15 @@ function CreateGroup() {
 
                     <div className="form-group">
                         <label className="form-label">Seu Telefone</label>
-                        <input
-                            type="tel"
-                            name="motoristaTelefone"
-                            className="form-input"
-                            placeholder="Ex: 31999998888"
+                        <PhoneInput
                             value={formData.motoristaTelefone}
-                            onChange={handleChange}
+                            onChange={(value) => setFormData(prev => ({ ...prev, motoristaTelefone: value }))}
+                            placeholder="+55 79 99999-9999"
                             required
                         />
+                        <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
+                            Inclua o código do país (ex: +55 para Brasil)
+                        </small>
                     </div>
 
                     <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
