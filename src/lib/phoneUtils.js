@@ -169,5 +169,46 @@ export function getPhoneLookupFormats(phone, defaultCountry = DEFAULT_COUNTRY) {
         formats.add('55' + cleaned);
     }
 
+    // Brazilian 9th digit handling
+    // Celulares brasileiros têm 9 dígitos, mas às vezes são salvos sem o 9 inicial
+    // DDD (2 dígitos) + número (8 ou 9 dígitos)
+    // Ex: 79998223366 (com 9) vs 7998223366 (sem 9)
+    const brazilianVariants = [];
+
+    for (const format of formats) {
+        // Extract DDD and number for Brazilian format
+        let ddd, numero, prefix = '';
+
+        if (format.startsWith('55') && format.length >= 12) {
+            prefix = '55';
+            ddd = format.substring(2, 4);
+            numero = format.substring(4);
+        } else if (format.length >= 10 && format.length <= 11) {
+            ddd = format.substring(0, 2);
+            numero = format.substring(2);
+        } else {
+            continue;
+        }
+
+        // Celular com 9 dígitos (tem o 9 inicial)
+        if (numero.length === 9 && numero.startsWith('9')) {
+            // Tentar versão sem o 9 inicial
+            const semNove = numero.substring(1);
+            brazilianVariants.push(prefix + ddd + semNove);
+            if (prefix) brazilianVariants.push(ddd + semNove);
+        }
+
+        // Celular com 8 dígitos (não tem o 9 inicial)
+        if (numero.length === 8) {
+            // Tentar versão com o 9 inicial
+            const comNove = '9' + numero;
+            brazilianVariants.push(prefix + ddd + comNove);
+            if (prefix) brazilianVariants.push(ddd + comNove);
+        }
+    }
+
+    // Add all variants
+    brazilianVariants.forEach(v => formats.add(v));
+
     return Array.from(formats);
 }
