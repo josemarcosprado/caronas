@@ -1,13 +1,17 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 export default function Login() {
     const [telefone, setTelefone] = useState('');
     const [senha, setSenha] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    
     const navigate = useNavigate();
+    const location = useLocation();
+    const { login } = useAuth();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -15,36 +19,81 @@ export default function Login() {
         setError('');
 
         try {
-            // Buscar membro motorista pelo telefone
-            const { data: membro, error: membroError } = await supabase
-                .from('membros')
-                .select('*, grupos(*)')
-                .eq('telefone', telefone.replace(/\D/g, ''))
-                .eq('is_motorista', true)
-                .single();
-
-            if (membroError || !membro) {
-                throw new Error('Telefone não encontrado ou não é motorista.');
+            const telefoneNormalizado = telefone.replace(/\D/g, '');
+            
+            // Gerar variantes do telefone para busca flexível
+            const variantes = [telefoneNormalizado];
+            
+            // Se NÃO começa com 55, adicionar variante com 55
+            if (!telefoneNormalizado.startsWith('55')) {
+                variantes.push('55' + telefoneNormalizado);
+            }
+            // Se começa com 55, adicionar variante sem 55
+            if (telefoneNormalizado.startsWith('55') && telefoneNormalizado.length > 2) {
+                variantes.push(telefoneNormalizado.substring(2));
             }
 
-            // Verificar senha (em produção, usar bcrypt no servidor)
-            // Por simplicidade no MVP, usamos comparação direta
-            // TODO: Implementar hash de senha no backend
+            console.log('Tentando login com variantes:', variantes);
+
+            // Buscar membro com qualquer uma das variantes do telefone
+            const { data: todos, error: todosError } = await supabase
+                .from('membros')
+                .select('id, telefone, is_motorista, nome')
+                .in('telefone', variantes);
+
+            console.log('Resultado busca por telefone:', { todos, todosError });
+
+            if (todosError) {
+                console.error('Erro na query:', todosError);
+                throw new Error('Erro ao acessar o banco de dados.');
+            }
+
+            if (!todos || todos.length === 0) {
+                throw new Error('Telefone não encontrado. Verifique se digitou corretamente.');
+            }
+
+            const membroEncontrado = todos.find(m => m.is_motorista);
+            if (!membroEncontrado) {
+                throw new Error('Este telefone não pertence a um motorista.');
+            }
+
+            // Buscar dados completos do motorista
+            const { data: membro, error: membroError } = await supabase
+                .from('membros')
+                .select('*')
+                .eq('id', membroEncontrado.id)
+                .single();
+
+            console.log('Busca membro completo:', { membro, membroError });
+
+            if (membroError || !membro) {
+                console.error('Erro busca membro:', membroError);
+                throw new Error('Erro ao carregar dados do motorista.');
+            }
+
+            // Buscar grupo separadamente
+            const { data: grupoData, error: grupoError } = await supabase
+                .from('grupos')
+                .select('*')
+                .eq('id', membro.grupo_id)
+                .single();
+
+            console.log('Busca grupo:', { grupoData, grupoError });
+
+            // Anexar grupo ao membro (não bloqueia login se grupo falhar)
+            membro.grupos = grupoData || null;
+
+            // Verificar senha
             if (membro.senha_hash !== senha) {
                 throw new Error('Senha incorreta.');
             }
 
-            // Criar sessão com Supabase Auth
-            // Nota: Como estamos usando senha simples, vamos apenas
-            // salvar no localStorage por enquanto
-            localStorage.setItem('cajurona_admin', JSON.stringify({
-                membroId: membro.id,
-                grupoId: membro.grupo_id,
-                nome: membro.nome
-            }));
+            // Salvar sessão via contexto
+            login(membro, 'motorista');
 
             // Redirecionar para dashboard admin
-            navigate(`/admin/${membro.grupo_id}`);
+            const from = location.state?.from?.pathname || `/admin/${membro.grupo_id}`;
+            navigate(from);
 
         } catch (err) {
             setError(err.message || 'Erro ao fazer login.');
@@ -116,6 +165,18 @@ export default function Login() {
                         {loading ? 'Entrando...' : 'Entrar'}
                     </button>
                 </form>
+
+                <p style={{
+                    marginTop: 'var(--space-4)',
+                    fontSize: 'var(--font-size-sm)',
+                    color: 'var(--text-muted)',
+                    textAlign: 'center'
+                }}>
+                    Não tem uma conta?{' '}
+                    <a href="/criar" style={{ color: 'var(--accent-primary)' }}>
+                        Criar novo grupo
+                    </a>
+                </p>
             </div>
         </div>
     );

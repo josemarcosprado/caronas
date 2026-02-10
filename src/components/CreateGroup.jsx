@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { validatePhone } from '../lib/phoneUtils.js';
 import PhoneInput from './PhoneInput.jsx';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 /**
  * Componente para criar um novo grupo de caronas
  */
 function CreateGroup() {
     const navigate = useNavigate();
+    const { login } = useAuth();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [grupoCriado, setGrupoCriado] = useState(null);
@@ -21,7 +23,8 @@ function CreateGroup() {
         valorTrajeto: '',
         tempoLimiteCancelamento: '30',
         motoristaNome: '',
-        motoristaTelefone: ''
+        motoristaTelefone: '',
+        motoristaSenha: ''
     });
 
     const handleChange = (e) => {
@@ -38,6 +41,13 @@ function CreateGroup() {
         const phoneValidation = validatePhone(formData.motoristaTelefone);
         if (!phoneValidation.valid) {
             setError(`Telefone inválido: ${phoneValidation.error}`);
+            setLoading(false);
+            return;
+        }
+
+        // Validate password
+        if (!formData.motoristaSenha || formData.motoristaSenha.length < 4) {
+            setError('A senha deve ter pelo menos 4 caracteres.');
             setLoading(false);
             return;
         }
@@ -73,7 +83,8 @@ function CreateGroup() {
                     telefone: phoneValidation.normalized.replace('+', ''), // Store without + for consistency
                     is_motorista: true,
                     ativo: true,
-                    dias_padrao: ['seg', 'ter', 'qua', 'qui', 'sex']
+                    dias_padrao: ['seg', 'ter', 'qua', 'qui', 'sex'],
+                    senha_hash: formData.motoristaSenha // TODO: usar hash real em produção
                 })
                 .select()
                 .single();
@@ -91,11 +102,15 @@ function CreateGroup() {
             // 4. Criar viagens da semana
             await criarViagensSemana(grupo.id, formData.horarioIda, formData.horarioVolta);
 
-            // 5. Salvar dados para tela de sucesso
+            // 5. Fazer login automático do motorista
+            login({ ...membro, grupo_id: grupo.id }, 'motorista');
+
+            // 6. Salvar dados para tela de sucesso
             setGrupoCriado({
                 id: grupo.id,
                 nome: grupo.nome,
-                link: `${window.location.origin}/g/${grupo.id}`
+                link: `${window.location.origin}/g/${grupo.id}`,
+                adminLink: `${window.location.origin}/admin/${grupo.id}`
             });
 
         } catch (err) {
@@ -186,9 +201,9 @@ function CreateGroup() {
                         <button
                             className="btn btn-primary"
                             style={{ flex: 1 }}
-                            onClick={() => navigate(`/g/${grupoCriado.id}`)}
+                            onClick={() => navigate(`/admin/${grupoCriado.id}`)}
                         >
-                            📊 Ver Dashboard
+                            📊 Gerenciar Grupo
                         </button>
                     </div>
 
@@ -247,6 +262,23 @@ function CreateGroup() {
                         />
                         <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
                             Inclua o código do país (ex: +55 para Brasil)
+                        </small>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Sua Senha</label>
+                        <input
+                            type="password"
+                            name="motoristaSenha"
+                            className="form-input"
+                            placeholder="Mínimo 4 caracteres"
+                            value={formData.motoristaSenha}
+                            onChange={handleChange}
+                            required
+                            minLength={4}
+                        />
+                        <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
+                            Use esta senha para acessar o painel de administração
                         </small>
                     </div>
 

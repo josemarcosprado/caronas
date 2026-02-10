@@ -1,9 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
+    const navigate = useNavigate();
+    const { user, logout, isMotorista } = useAuth();
+    
+    // Determinar se é admin: prop OU usuário logado como motorista
+    const canEdit = isAdmin || isMotorista;
+    
     const [grupo, setGrupo] = useState(null);
     const [membros, setMembros] = useState([]);
     const [viagens, setViagens] = useState([]);
@@ -79,8 +86,10 @@ export default function Dashboard({ isAdmin = false }) {
         loadData();
     }, [loadData]);
 
-    // Salvar configurações
+    // Salvar configurações (apenas motoristas)
     const salvarConfig = async () => {
+        if (!canEdit) return;
+        
         try {
             const { error } = await supabase
                 .from('grupos')
@@ -101,6 +110,27 @@ export default function Dashboard({ isAdmin = false }) {
         } catch (err) {
             alert('Erro ao salvar: ' + err.message);
         }
+    };
+
+    // Sair do grupo (passageiros) - TODO: implementar
+    const sairDoGrupo = async () => {
+        if (confirm('Tem certeza que deseja sair do grupo?')) {
+            // Implementar lógica de sair
+            alert('Funcionalidade em desenvolvimento');
+        }
+    };
+
+    // Excluir grupo (motoristas)
+    const excluirGrupo = () => {
+        if (confirm('Tem certeza que deseja EXCLUIR o grupo? Esta ação é irreversível!')) {
+            alert('Funcionalidade em desenvolvimento');
+        }
+    };
+
+    // Fazer logout
+    const handleLogout = () => {
+        logout();
+        navigate('/');
     };
 
     // Formatar data
@@ -135,6 +165,11 @@ export default function Dashboard({ isAdmin = false }) {
 
     const motorista = membros.find(m => m.is_motorista);
     const shareLink = `${window.location.origin}/g/${grupoId}`;
+    
+    // Tabs disponíveis baseado no role
+    const availableTabs = canEdit 
+        ? ['inicio', 'viagens', 'membros', 'config']
+        : ['inicio', 'viagens', 'membros'];
 
     return (
         <div className="container">
@@ -153,6 +188,28 @@ export default function Dashboard({ isAdmin = false }) {
                         }
                     </p>
                 </div>
+                
+                {/* User info & logout */}
+                {user && (
+                    <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
+                            {user.nome}
+                        </div>
+                        <button
+                            onClick={handleLogout}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--text-muted)',
+                                fontSize: 'var(--font-size-xs)',
+                                cursor: 'pointer',
+                                textDecoration: 'underline'
+                            }}
+                        >
+                            Sair
+                        </button>
+                    </div>
+                )}
             </header>
 
             {/* Tabs */}
@@ -163,7 +220,7 @@ export default function Dashboard({ isAdmin = false }) {
                 borderBottom: '1px solid var(--border-color)',
                 paddingBottom: 'var(--space-2)'
             }}>
-                {['inicio', 'viagens', 'membros', 'config'].map(tab => (
+                {availableTabs.map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -232,51 +289,69 @@ export default function Dashboard({ isAdmin = false }) {
                             >
                                 📋 Copiar link do grupo
                             </button>
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => setActiveTab('config')}
-                            >
-                                ⚙️ Configurar grupo
-                            </button>
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => setActiveTab('membros')}
-                            >
-                                👥 Gerenciar membros
-                            </button>
+                            
+                            {/* Apenas motoristas veem esses botões */}
+                            {canEdit && (
+                                <>
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={() => setActiveTab('config')}
+                                    >
+                                        ⚙️ Configurar grupo
+                                    </button>
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={() => setActiveTab('membros')}
+                                    >
+                                        👥 Gerenciar membros
+                                    </button>
+                                </>
+                            )}
+                            
+                            {/* Passageiros veem apenas ver membros */}
+                            {!canEdit && (
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => setActiveTab('membros')}
+                                >
+                                    👥 Ver membros
+                                </button>
+                            )}
                         </div>
                     </div>
 
-                    {/* Bot Info */}
-                    <div className="day-detail">
-                        <h3 style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-lg)' }}>
-                            🤖 Configurar Bot WhatsApp
-                        </h3>
-                        <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-sm)' }}>
-                            Para usar o bot de confirmação via WhatsApp, configure a API:
-                        </p>
-                        <div style={{
-                            background: 'var(--bg-secondary)',
-                            padding: 'var(--space-3)',
-                            borderRadius: 'var(--radius-md)',
-                            fontSize: 'var(--font-size-sm)',
-                            marginBottom: 'var(--space-3)'
-                        }}>
-                            <strong>Webhook URL:</strong><br />
-                            <code style={{ wordBreak: 'break-all' }}>
-                                {window.location.origin}/api/webhook
-                            </code>
+                    {/* Bot Info - apenas para motoristas */}
+                    {canEdit && (
+                        <div className="day-detail">
+                            <h3 style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-lg)' }}>
+                                🤖 Configurar Bot WhatsApp
+                            </h3>
+                            <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-sm)' }}>
+                                Para usar o bot de confirmação via WhatsApp, configure a API:
+                            </p>
+                            <div style={{
+                                background: 'var(--bg-secondary)',
+                                padding: 'var(--space-3)',
+                                borderRadius: 'var(--radius-md)',
+                                fontSize: 'var(--font-size-sm)',
+                                marginBottom: 'var(--space-3)'
+                            }}>
+                                <strong>Webhook URL:</strong><br />
+                                <code style={{ wordBreak: 'break-all' }}>
+                                    {window.location.origin}/api/webhook
+                                </code>
+                            </div>
+                            <div style={{
+                                background: 'var(--bg-secondary)',
+                                padding: 'var(--space-3)',
+                                borderRadius: 'var(--radius-md)',
+                                fontSize: 'var(--font-size-sm)'
+                            }}>
+                                <strong>Group ID (WhatsApp):</strong><br />
+                                <code>{grupo.whatsapp_group_id || 'Não configurado'}</code>
+                            </div>
                         </div>
-                        <div style={{
-                            background: 'var(--bg-secondary)',
-                            padding: 'var(--space-3)',
-                            borderRadius: 'var(--radius-md)',
-                            fontSize: 'var(--font-size-sm)'
-                        }}>
-                            <strong>Group ID (WhatsApp):</strong><br />
-                            <code>{grupo.whatsapp_group_id || 'Não configurado'}</code>
-                        </div>
-                    </div>
+                    )}
                 </div>
             )}
 
@@ -348,8 +423,8 @@ export default function Dashboard({ isAdmin = false }) {
                 </div>
             )}
 
-            {/* Tab: Configurações */}
-            {activeTab === 'config' && (
+            {/* Tab: Configurações - apenas para motoristas */}
+            {activeTab === 'config' && canEdit && (
                 <div>
                     <h3 style={{ marginBottom: 'var(--space-3)' }}>⚙️ Configurações do Grupo</h3>
 
@@ -479,7 +554,7 @@ export default function Dashboard({ isAdmin = false }) {
                         )}
                     </div>
 
-                    {/* Danger Zone */}
+                    {/* Danger Zone - diferente para motorista vs passageiro */}
                     <div className="day-detail" style={{ marginTop: 'var(--space-4)', borderColor: 'var(--error)' }}>
                         <h4 style={{ color: 'var(--error)', marginBottom: 'var(--space-2)' }}>⚠️ Zona de Perigo</h4>
                         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>
@@ -492,11 +567,22 @@ export default function Dashboard({ isAdmin = false }) {
                                 color: 'white',
                                 opacity: 0.8
                             }}
-                            onClick={() => alert('Funcionalidade em desenvolvimento')}
+                            onClick={excluirGrupo}
                         >
                             🗑️ Excluir Grupo
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Para passageiros que de alguma forma acessam a config tab */}
+            {activeTab === 'config' && !canEdit && (
+                <div className="empty-state">
+                    <div className="icon">🔒</div>
+                    <p>Apenas motoristas podem acessar as configurações.</p>
+                    <button className="btn btn-primary" onClick={() => setActiveTab('inicio')}>
+                        Voltar ao início
+                    </button>
                 </div>
             )}
         </div>

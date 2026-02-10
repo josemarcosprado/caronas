@@ -1,28 +1,12 @@
-import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Login from './components/Login.jsx';
 import CreateGroup from './components/CreateGroup.jsx';
-import { supabase } from './lib/supabase.js';
+import ProtectedRoute from './components/ProtectedRoute.jsx';
 
-function App() {
-    const [session, setSession] = useState(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        // Checar sessão existente
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
-            setLoading(false);
-        });
-
-        // Escutar mudanças de auth
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setSession(session);
-        });
-
-        return () => subscription.unsubscribe();
-    }, []);
+function AppRoutes() {
+    const { user, loading } = useAuth();
 
     if (loading) {
         return (
@@ -33,53 +17,85 @@ function App() {
     }
 
     return (
-        <BrowserRouter>
-            <Routes>
-                {/* Criar novo grupo */}
-                <Route path="/criar" element={<CreateGroup />} />
+        <Routes>
+            {/* Criar novo grupo */}
+            <Route path="/criar" element={<CreateGroup />} />
 
-                {/* Dashboard público (read-only) */}
-                <Route path="/g/:grupoId" element={<Dashboard />} />
+            {/* Dashboard público (read-only) - qualquer um pode ver */}
+            <Route path="/g/:grupoId" element={<Dashboard />} />
 
-                {/* Login admin */}
-                <Route path="/admin/login" element={<Login />} />
+            {/* Login */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/admin/login" element={<Navigate to="/login" replace />} />
 
-                {/* Dashboard admin (protegido) */}
-                <Route
-                    path="/admin/:grupoId"
-                    element={session ? <Dashboard isAdmin /> : <Navigate to="/admin/login" />}
-                />
+            {/* Dashboard admin (protegido - apenas motoristas) */}
+            <Route
+                path="/admin/:grupoId"
+                element={
+                    <ProtectedRoute requiredRole="motorista">
+                        <Dashboard isAdmin />
+                    </ProtectedRoute>
+                }
+            />
 
-                {/* Landing page */}
-                <Route path="/" element={
-                    <div className="login-container">
-                        <div className="login-card" style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>🚗</div>
-                            <h1 style={{ fontSize: 'var(--font-size-2xl)', marginBottom: 'var(--space-2)' }}>
-                                Cajurona
-                            </h1>
-                            <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-6)' }}>
-                                Gerenciamento de caronas recorrentes
-                            </p>
+            {/* Landing page */}
+            <Route path="/" element={
+                <div className="login-container">
+                    <div className="login-card" style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>🚗</div>
+                        <h1 style={{ fontSize: 'var(--font-size-2xl)', marginBottom: 'var(--space-2)' }}>
+                            Cajurona
+                        </h1>
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-6)' }}>
+                            Gerenciamento de caronas recorrentes
+                        </p>
 
-                            <Link to="/criar" className="btn btn-primary" style={{ marginBottom: 'var(--space-4)' }}>
-                                ✨ Criar Novo Grupo
-                            </Link>
+                        {user ? (
+                            <>
+                                <p style={{ marginBottom: 'var(--space-4)', color: 'var(--text-primary)' }}>
+                                    Olá, <strong>{user.nome}</strong>! 👋
+                                </p>
+                                <Link 
+                                    to={user.isMotorista ? `/admin/${user.grupoId}` : `/g/${user.grupoId}`} 
+                                    className="btn btn-primary" 
+                                    style={{ marginBottom: 'var(--space-3)' }}
+                                >
+                                    📊 Ir para o Dashboard
+                                </Link>
+                            </>
+                        ) : (
+                            <>
+                                <Link to="/login" className="btn btn-primary" style={{ marginBottom: 'var(--space-3)' }}>
+                                    🔑 Entrar
+                                </Link>
+                                <Link to="/criar" className="btn btn-secondary" style={{ marginBottom: 'var(--space-4)' }}>
+                                    ✨ Criar Novo Grupo
+                                </Link>
+                            </>
+                        )}
 
-                            <p style={{
-                                fontSize: 'var(--font-size-sm)',
-                                color: 'var(--text-muted)',
-                                marginTop: 'var(--space-4)'
-                            }}>
-                                Já tem um grupo? Acesse pelo link que você recebeu.
-                            </p>
-                        </div>
+                        <p style={{
+                            fontSize: 'var(--font-size-sm)',
+                            color: 'var(--text-muted)',
+                            marginTop: 'var(--space-4)'
+                        }}>
+                            Já tem um grupo? Acesse pelo link que você recebeu.
+                        </p>
                     </div>
-                } />
-            </Routes>
-        </BrowserRouter>
+                </div>
+            } />
+        </Routes>
+    );
+}
+
+function App() {
+    return (
+        <AuthProvider>
+            <BrowserRouter>
+                <AppRoutes />
+            </BrowserRouter>
+        </AuthProvider>
     );
 }
 
 export default App;
-
