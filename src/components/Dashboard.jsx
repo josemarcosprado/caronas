@@ -16,9 +16,11 @@ export default function Dashboard({ isAdmin = false }) {
 
     const [grupo, setGrupo] = useState(null);
     const [membros, setMembros] = useState([]);
+    const [pendentes, setPendentes] = useState([]);
     const [viagens, setViagens] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [imagemExpandida, setImagemExpandida] = useState(null);
     const [searchParams, setSearchParams] = useSearchParams();
     const activeTab = useMemo(() => {
         const tab = searchParams.get('tab');
@@ -60,15 +62,28 @@ export default function Dashboard({ isAdmin = false }) {
                 tempo_limite_cancelamento: grupoData.tempo_limite_cancelamento || 30
             });
 
-            // Buscar membros
+            // Buscar membros aprovados
             const { data: membrosData } = await supabase
                 .from('membros')
                 .select('*')
                 .eq('grupo_id', grupoId)
                 .eq('ativo', true)
+                .eq('status_aprovacao', 'aprovado')
                 .order('is_motorista', { ascending: false });
 
             setMembros(membrosData || []);
+
+            // Buscar membros pendentes de aprovação (apenas para motoristas)
+            if (canEdit) {
+                const { data: pendentesData } = await supabase
+                    .from('membros')
+                    .select('*')
+                    .eq('grupo_id', grupoId)
+                    .eq('status_aprovacao', 'pendente')
+                    .order('created_at', { ascending: true });
+
+                setPendentes(pendentesData || []);
+            }
 
             // Buscar viagens da semana
             const hoje = new Date().toISOString().split('T')[0];
@@ -96,7 +111,7 @@ export default function Dashboard({ isAdmin = false }) {
         } finally {
             setLoading(false);
         }
-    }, [grupoId]);
+    }, [grupoId, canEdit]);
 
     useEffect(() => {
         loadData();
@@ -125,6 +140,25 @@ export default function Dashboard({ isAdmin = false }) {
             loadData();
         } catch (err) {
             alert('Erro ao salvar: ' + err.message);
+        }
+    };
+
+    // Aprovar ou rejeitar membro pendente
+    const atualizarStatusMembro = async (membroId, novoStatus) => {
+        const acao = novoStatus === 'aprovado' ? 'aprovar' : 'rejeitar';
+        if (!confirm(`Tem certeza que deseja ${acao} este membro?`)) return;
+
+        try {
+            const { error } = await supabase
+                .from('membros')
+                .update({ status_aprovacao: novoStatus })
+                .eq('id', membroId);
+
+            if (error) throw error;
+            // Recarregar dados para atualizar listas
+            loadData();
+        } catch (err) {
+            alert('Erro ao atualizar status: ' + err.message);
         }
     };
 
@@ -301,6 +335,94 @@ export default function Dashboard({ isAdmin = false }) {
             {/* Tab: Início */}
             {activeTab === 'inicio' && (
                 <div>
+                    {/* Solicitações Pendentes — apenas motoristas */}
+                    {canEdit && pendentes.length > 0 && (
+                        <div style={{
+                            background: 'var(--warning-bg, #fff3cd)',
+                            border: '1px solid var(--warning, #ffc107)',
+                            borderRadius: 'var(--radius-md)',
+                            padding: 'var(--space-4)',
+                            marginBottom: 'var(--space-4)'
+                        }}>
+                            <h3 style={{ margin: '0 0 var(--space-3) 0', fontSize: 'var(--font-size-lg)' }}>
+                                🔔 Solicitações Pendentes ({pendentes.length})
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                {pendentes.map(membro => (
+                                    <div key={membro.id} style={{
+                                        background: 'var(--bg-primary)',
+                                        borderRadius: 'var(--radius-md)',
+                                        padding: 'var(--space-3)',
+                                        border: '1px solid var(--border-color)'
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-2)' }}>
+                                            <div>
+                                                <strong>{membro.nome}</strong>
+                                                <span style={{
+                                                    marginLeft: 'var(--space-2)',
+                                                    padding: '2px 8px',
+                                                    borderRadius: 'var(--radius-sm)',
+                                                    fontSize: 'var(--font-size-xs)',
+                                                    fontWeight: 600,
+                                                    background: membro.is_motorista ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
+                                                    color: membro.is_motorista ? 'var(--info, #004085)' : 'var(--success, #155724)'
+                                                }}>
+                                                    {membro.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
+                                                </span>
+                                                <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', margin: 'var(--space-1) 0 0 0' }}>
+                                                    📱 {membro.telefone}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Documentos */}
+                                        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
+                                            {membro.is_motorista && membro.cnh_url && (
+                                                <div>
+                                                    <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🪪 CNH:</p>
+                                                    <img
+                                                        src={membro.cnh_url}
+                                                        alt={`CNH de ${membro.nome}`}
+                                                        onClick={() => setImagemExpandida(membro.cnh_url)}
+                                                        style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
+                                                    />
+                                                </div>
+                                            )}
+                                            {membro.carteirinha_url && (
+                                                <div>
+                                                    <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🎓 Carteirinha:</p>
+                                                    <img
+                                                        src={membro.carteirinha_url}
+                                                        alt={`Carteirinha de ${membro.nome}`}
+                                                        onClick={() => setImagemExpandida(membro.carteirinha_url)}
+                                                        style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Botões de ação */}
+                                        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                                            <button
+                                                className="btn btn-primary"
+                                                style={{ flex: 1, fontSize: 'var(--font-size-sm)' }}
+                                                onClick={() => atualizarStatusMembro(membro.id, 'aprovado')}
+                                            >
+                                                ✅ Aprovar
+                                            </button>
+                                            <button
+                                                className="btn"
+                                                style={{ flex: 1, background: 'var(--error)', color: 'white', fontSize: 'var(--font-size-sm)' }}
+                                                onClick={() => atualizarStatusMembro(membro.id, 'rejeitado')}
+                                            >
+                                                ❌ Rejeitar
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     {/* Quick Stats */}
                     <div style={{
                         display: 'grid',
@@ -712,6 +834,48 @@ export default function Dashboard({ isAdmin = false }) {
                         Você pode participar de vários grupos como passageiro, mas apenas um como motorista.
                     </p>
                     <AvailableGroups />
+                </div>
+            )}
+
+            {/* Modal de imagem expandida */}
+            {imagemExpandida && (
+                <div
+                    onClick={() => setImagemExpandida(null)}
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.9)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 1000,
+                        cursor: 'pointer',
+                        padding: 'var(--space-4)'
+                    }}
+                >
+                    <img
+                        src={imagemExpandida}
+                        alt="Documento ampliado"
+                        style={{
+                            maxWidth: '100%',
+                            maxHeight: '100%',
+                            objectFit: 'contain',
+                            borderRadius: 'var(--radius-md)'
+                        }}
+                    />
+                    <div style={{
+                        position: 'absolute',
+                        top: 'var(--space-4)',
+                        right: 'var(--space-4)',
+                        color: 'white',
+                        fontSize: '2rem',
+                        cursor: 'pointer'
+                    }}>
+                        ✕
+                    </div>
                 </div>
             )}
         </div>
