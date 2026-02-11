@@ -3,6 +3,9 @@ import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
+// Removed self-import
+import AvailableGroups from './AvailableGroups.jsx';
+
 export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
     const navigate = useNavigate();
@@ -19,7 +22,7 @@ export default function Dashboard({ isAdmin = false }) {
     const [searchParams, setSearchParams] = useSearchParams();
     const activeTab = useMemo(() => {
         const tab = searchParams.get('tab');
-        const validTabs = ['inicio', 'viagens', 'membros', 'config'];
+        const validTabs = ['inicio', 'viagens', 'membros', 'config', 'grupos'];
         return validTabs.includes(tab) ? tab : 'inicio';
     }, [searchParams]);
     const changeTab = useCallback((tab) => {
@@ -31,6 +34,11 @@ export default function Dashboard({ isAdmin = false }) {
     // Carregar dados
     const loadData = useCallback(async () => {
         try {
+            if (!grupoId || grupoId === 'undefined' || grupoId === 'null') {
+                navigate('/grupos');
+                return;
+            }
+
             setError(null);
 
             // Buscar grupo
@@ -84,7 +92,7 @@ export default function Dashboard({ isAdmin = false }) {
 
         } catch (err) {
             console.error('Erro ao carregar dados:', err);
-            setError('Não foi possível carregar os dados.');
+            setError(`Não foi possível carregar os dados: ${err.message || 'Erro desconhecido'}`);
         } finally {
             setLoading(false);
         }
@@ -141,7 +149,35 @@ export default function Dashboard({ isAdmin = false }) {
         navigate('/');
     };
 
-    // Formatar data
+    // Aprovar ou rejeitar membro
+    const handleApproveMember = async (membroId, novoStatus) => {
+        try {
+            setLoading(true);
+            const { error: updateError } = await supabase
+                .from('membros')
+                .update({ status_aprovacao: novoStatus })
+                .eq('id', membroId);
+
+            if (updateError) throw updateError;
+
+            // Recarregar dados
+            loadData();
+            alert(novoStatus === 'aprovado' ? 'Membro aprovado com sucesso!' : 'Solicitação rejeitada.');
+        } catch (err) {
+            console.error('Erro ao atualizar status:', err);
+            alert('Erro ao atualizar status do membro.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Formatar telefone para display
+    const formatPhone = (phone) => {
+        if (!phone) return '';
+        return phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+    };
+
+    // Adicionar membro (apenas motoristas)
     const formatData = (dataStr) => {
         const date = new Date(dataStr + 'T12:00:00');
         const dias = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -176,8 +212,8 @@ export default function Dashboard({ isAdmin = false }) {
 
     // Tabs disponíveis baseado no role
     const availableTabs = canEdit
-        ? ['inicio', 'viagens', 'membros', 'config']
-        : ['inicio', 'viagens', 'membros'];
+        ? ['inicio', 'viagens', 'membros', 'config', 'grupos']
+        : ['inicio', 'viagens', 'membros', 'grupos'];
 
     return (
         <div className="container">
@@ -257,6 +293,7 @@ export default function Dashboard({ isAdmin = false }) {
                         {tab === 'viagens' && '📅 Viagens'}
                         {tab === 'membros' && '👥 Membros'}
                         {tab === 'config' && '⚙️ Config'}
+                        {tab === 'grupos' && '🔍 Grupos'}
                     </button>
                 ))}
             </div>
@@ -420,6 +457,70 @@ export default function Dashboard({ isAdmin = false }) {
             {activeTab === 'membros' && (
                 <div>
                     <h3 style={{ marginBottom: 'var(--space-3)' }}>👥 Membros do Grupo</h3>
+
+                    {/* Seção de Aprovação (Apenas para quem pode editar/motorista) */}
+                    {canEdit && (
+                        <div className="card" style={{ marginBottom: '1rem', borderLeft: '4px solid var(--warning)' }}>
+                            <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem' }}>
+                                ⚠️ Solicitações Pendentes
+                            </h3>
+                            {membros.filter(m => m.status_aprovacao === 'pendente').length === 0 ? (
+                                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Nenhuma solicitação pendente.</p>
+                            ) : (
+                                <div style={{ display: 'grid', gap: '1rem' }}>
+                                    {membros.filter(m => m.status_aprovacao === 'pendente').map(membro => (
+                                        <div key={membro.id} style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            padding: '10px',
+                                            background: 'var(--bg-app)',
+                                            borderRadius: 'var(--radius-sm)'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                {membro.carteirinha_url ? (
+                                                    <a href={membro.carteirinha_url} target="_blank" rel="noopener noreferrer">
+                                                        <img
+                                                            src={membro.carteirinha_url}
+                                                            alt="Carteirinha"
+                                                            style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }}
+                                                        />
+                                                    </a>
+                                                ) : (
+                                                    <div style={{ width: '50px', height: '50px', background: '#ccc', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        📷
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <strong>{membro.nome}</strong>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.telefone)}</div>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <button
+                                                    onClick={() => handleApproveMember(membro.id, 'aprovado')}
+                                                    className="btn btn-primary"
+                                                    style={{ padding: '4px 8px', fontSize: '0.9rem' }}
+                                                    title="Aprovar"
+                                                >
+                                                    ✅
+                                                </button>
+                                                <button
+                                                    onClick={() => handleApproveMember(membro.id, 'rejeitado')}
+                                                    className="btn btn-secondary"
+                                                    style={{ padding: '4px 8px', fontSize: '0.9rem', color: 'var(--error)' }}
+                                                    title="Rejeitar"
+                                                >
+                                                    ❌
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     <div className="member-list">
                         {membros.map(membro => (
                             <div key={membro.id} className="member-item">
@@ -603,6 +704,17 @@ export default function Dashboard({ isAdmin = false }) {
                     </button>
                 </div>
             )}
+            {/* Tab: Grupos Disponíveis */}
+            {activeTab === 'grupos' && (
+                <div>
+                    <h3 style={{ marginBottom: 'var(--space-3)' }}>🔍 Grupos Disponíveis</h3>
+                    <p style={{ marginBottom: 'var(--space-4)', color: 'var(--text-secondary)' }}>
+                        Você pode participar de vários grupos como passageiro, mas apenas um como motorista.
+                    </p>
+                    <AvailableGroups />
+                </div>
+            )}
         </div>
     );
 }
+

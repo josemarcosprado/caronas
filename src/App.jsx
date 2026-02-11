@@ -6,6 +6,7 @@ import CreateGroup from './components/CreateGroup.jsx';
 import AdminApproval from './components/AdminApproval.jsx';
 import JoinGroup from './components/JoinGroup.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import AvailableGroups from './components/AvailableGroups.jsx';
 
 function AppRoutes() {
     const { user, loading } = useAuth();
@@ -31,6 +32,17 @@ function AppRoutes() {
 
             {/* Dashboard público (read-only) - qualquer um pode ver */}
             <Route path="/g/:grupoId" element={<Dashboard />} />
+
+            {/* Lista de grupos disponíveis (para quem não tem grupo ou quertrocar) */}
+            <Route path="/grupos" element={
+                <div className="container">
+                    <h1 style={{ marginBottom: 'var(--space-4)', textAlign: 'center' }}>🚗 Grupos Disponíveis</h1>
+                    <AvailableGroups />
+                    <div style={{ textAlign: 'center', marginTop: 'var(--space-4)' }}>
+                        <Link to="/" className="btn btn-secondary">🏠 Voltar ao Início</Link>
+                    </div>
+                </div>
+            } />
 
             {/* Login */}
             <Route path="/login" element={<Login />} />

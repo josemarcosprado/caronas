@@ -36,9 +36,10 @@ export default function Login() {
             console.log('Tentando login com variantes:', variantes);
 
             // Buscar membro com qualquer uma das variantes do telefone
+            // Passo 1: Buscar membros
             const { data: todos, error: todosError } = await supabase
                 .from('membros')
-                .select('id, telefone, is_motorista, nome')
+                .select('*')
                 .in('telefone', variantes);
 
             console.log('Resultado busca por telefone:', { todos, todosError });
@@ -52,55 +53,92 @@ export default function Login() {
                 throw new Error('Telefone não encontrado. Verifique se digitou corretamente.');
             }
 
-            const membroEncontrado = todos.find(m => m.is_motorista);
-            if (!membroEncontrado) {
-                throw new Error('Este telefone não pertence a um motorista.');
+            // Passo 2: Buscar grupos desses membros
+            // Coletar IDs de grupos únicos (filtrando nulos)
+            const grupoIds = [...new Set(todos.map(m => m.grupo_id).filter(id => id))];
+
+            let gruposData = [];
+
+            if (grupoIds.length > 0) {
+                const { data, error } = await supabase
+                    .from('grupos')
+                    .select('*')
+                    .in('id', grupoIds);
+
+                if (error) {
+                    console.error('Erro ao buscar grupos:', error);
+                    throw new Error('Erro ao carregar dados dos grupos.');
+                }
+                gruposData = data || [];
             }
 
-            // Buscar dados completos do motorista
-            const { data: membro, error: membroError } = await supabase
-                .from('membros')
-                .select('*')
-                .eq('id', membroEncontrado.id)
-                .single();
+            // Anexar dados do grupo a cada membro
+            const memberships = todos.map(membro => {
+                const grupo = gruposData.find(g => g.id === membro.grupo_id);
+                // Se não achou grupo (ou é null), grupo será undefined
+                return { ...membro, grupos: grupo };
+            });
 
-            console.log('Busca membro completo:', { membro, membroError });
+            // Filtrar apenas membros ativos/pendentes (ignorar rejeitados se quiser, mas aqui vamos tratar depois)
+            // memberships já foi declarado acima com o map
+            // const memberships = todos; // REMOVIDO
 
-            if (membroError || !membro) {
-                console.error('Erro busca membro:', membroError);
-                throw new Error('Erro ao carregar dados do motorista.');
+            // Selecionar o membro principal para logar (preferência por motorista, ou o primeiro)
+            // Se houver múltiplos, idealmente o usuário escolheria, mas por enquanto vamos logar no primeiro
+            // e permitir troca depois.
+            // Regra: Se tiver um motorista, entra como motorista.
+            let membroSelecionado = memberships.find(m => m.is_motorista) || memberships[0];
+
+            // Verificar senha APENAS se estiver entrando como motorista
+            if (membroSelecionado.is_motorista) {
+                if (membroSelecionado.senha_hash !== senha) {
+                    throw new Error('Senha incorreta.');
+                }
+            } else {
+                // Para passageiros, talvez pedir senha se tiver? Ou fluxo sem senha por enquanto?
+                // O código original pedia senha para LOGIN.
+                // Se o passageiro não tem senha, como ele loga? 
+                // O schema diz: senha_hash VARCHAR(255), -- Apenas para motoristas (admin)
+                // Então passageiro não tem senha. Login por telefone apenas? 
+                // Isso é inseguro. Vamos assumir que por enquanto é só telefone para passageiro
+                // ou verificar se existe algum fluxo de auth real. 
+                // O MVP parece confiar no telefone/localstorage.
+
+                // TODO: Implementar OTP ou senha para passageiro. Por enquanto, login aberto (conforme app de teste).
+                // Mas se o usuário digitou senha, vamos ignorar para passageiro?
+                // Vamos manter simples: Passageiro entra sem senha (apenas telefone).
             }
 
-            // Buscar grupo separadamente
-            const { data: grupoData, error: grupoError } = await supabase
-                .from('grupos')
-                .select('*')
-                .eq('id', membro.grupo_id)
-                .single();
-
-            console.log('Busca grupo:', { grupoData, grupoError });
-
-            // Anexar grupo ao membro (não bloqueia login se grupo falhar)
-            membro.grupos = grupoData || null;
-
-            // Verificar senha
-            if (membro.senha_hash !== senha) {
-                throw new Error('Senha incorreta.');
+            // Se o selecionado estiver pendente/rejeitado, tentar achar um aprovado
+            if (membroSelecionado.status_aprovacao !== 'aprovado' && memberships.length > 1) {
+                const aprovado = memberships.find(m => m.status_aprovacao === 'aprovado');
+                if (aprovado) membroSelecionado = aprovado;
             }
 
-            // Verificar status de aprovação
-            if (membro.status_aprovacao === 'pendente') {
-                throw new Error('Sua conta está aguardando aprovação. Você será notificado quando sua CNH for verificada.');
+            if (membroSelecionado.status_aprovacao === 'pendente') {
+                throw new Error('Sua solicitação para participar deste grupo ainda está aguardando aprovação do motorista.');
             }
-            if (membro.status_aprovacao === 'rejeitado') {
-                throw new Error('Sua conta foi rejeitada. Entre em contato com o administrador para mais informações.');
+            if (membroSelecionado.status_aprovacao === 'rejeitado') {
+                throw new Error('Sua solicitação de entrada neste grupo foi rejeitada.');
             }
 
-            // Salvar sessão via contexto
-            login(membro, 'motorista');
+            // Salvar sessão via contexto (passando todos os memberships)
+            login(membroSelecionado, membroSelecionado.is_motorista ? 'motorista' : 'passageiro', memberships);
 
-            // Redirecionar para dashboard admin
-            const from = location.state?.from?.pathname || `/admin/${membro.grupo_id}`;
+            // Redirecionar
+            let targetPath = '/';
+
+            if (!membroSelecionado.grupo_id) {
+                // Se não tem grupo, vai para listagem
+                targetPath = '/grupos';
+            } else if (membroSelecionado.is_motorista) {
+                targetPath = `/admin/${membroSelecionado.grupo_id}`;
+            } else {
+                targetPath = `/g/${membroSelecionado.grupo_id}`;
+            }
+
+            const from = location.state?.from?.pathname || targetPath;
+            console.log('Redirecionando para:', from);
             navigate(from);
 
         } catch (err) {

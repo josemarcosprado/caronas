@@ -33,21 +33,97 @@ export function AuthProvider({ children }) {
 
     /**
      * Fazer login
-     * @param {Object} userData - Dados do usuário
+     * @param {Object} userData - Dados do usuário (membro)
      * @param {'motorista' | 'passageiro'} role - Role do usuário
+     * @param {Array} allMemberships - Lista de todos os registros de mebro deste usuário (opcional)
      */
-    const login = (userData, role) => {
+    const login = (userData, role, allMemberships = []) => {
+        // Se não vier memberships explícitos, assumimos o atual como único inicial
+        const memberships = allMemberships.length > 0 ? allMemberships : [userData];
+
         const session = {
             id: userData.id,
             nome: userData.nome,
             telefone: userData.telefone,
-            grupoId: userData.grupo_id,
+            grupoId: userData.grupo_id, // Grupo ativo
             role: role,
-            isMotorista: role === 'motorista'
+            isMotorista: role === 'motorista',
+            memberships: memberships // Todos os grupos
         };
-        
+
         setUser(session);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    };
+
+    /**
+     * Trocar de grupo ativo
+     * @param {string} targetGroupId 
+     */
+    const switchGroup = async (targetGroupId) => {
+        if (!user || !user.memberships) return false;
+
+        const targetMembership = user.memberships.find(m => m.grupo_id === targetGroupId);
+
+        if (!targetMembership) {
+            console.error('Usuário não é membro do grupo alvo');
+            return false;
+        }
+
+        // Atualizar sessão com todos os dados do novo contexto
+        const newSession = {
+            ...user,
+            id: targetMembership.id, // ID do membro pode mudar por grupo
+            grupoId: targetMembership.grupo_id,
+            role: targetMembership.is_motorista ? 'motorista' : 'passageiro',
+            isMotorista: targetMembership.is_motorista,
+            // Mantemos nome/telefone/memberships globais
+        };
+
+        setUser(newSession);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(newSession));
+        return true;
+    };
+
+    /**
+     * Atualizar dados da sessão (ex: após aceitar convite)
+     */
+    const refreshSession = async () => {
+        if (!user) return;
+
+        try {
+            // Recarregar memberships (Passo 1: buscar membros)
+            const { data: membrosData, error: membrosError } = await supabase
+                .from('membros')
+                .select('*')
+                .eq('telefone', user.telefone);
+
+            if (membrosError || !membrosData) return;
+
+            // Passo 2: Buscar grupos
+            const grupoIds = [...new Set(membrosData.map(m => m.grupo_id).filter(id => id))];
+            let gruposData = [];
+
+            if (grupoIds.length > 0) {
+                const { data: gData } = await supabase
+                    .from('grupos')
+                    .select('*')
+                    .in('id', grupoIds);
+                gruposData = gData || [];
+            }
+
+            // Combinar dados
+            const memberships = membrosData.map(m => {
+                const g = gruposData.find(grp => grp.id === m.grupo_id);
+                return { ...m, grupos: g };
+            });
+
+            // Encontrar o membro ativo atual para atualizar dados
+            const currentMem = memberships.find(m => m.grupo_id === user.grupoId) || memberships[0];
+
+            login(currentMem, currentMem.is_motorista ? 'motorista' : 'passageiro', memberships);
+        } catch (e) {
+            console.error('Erro ao atualizar sessão:', e);
+        }
     };
 
     /**
@@ -81,6 +157,8 @@ export function AuthProvider({ children }) {
         loading,
         login,
         logout,
+        switchGroup,
+        refreshSession,
         isAuthenticated,
         hasRole,
         role: user?.role || null,
