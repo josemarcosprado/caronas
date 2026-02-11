@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Login from './components/Login.jsx';
 import CreateGroup from './components/CreateGroup.jsx';
+import AdminApproval from './components/AdminApproval.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 
 function AppRoutes() {
@@ -20,6 +21,9 @@ function AppRoutes() {
         <Routes>
             {/* Criar novo grupo */}
             <Route path="/criar" element={<CreateGroup />} />
+
+            {/* Painel de aprovações de motoristas (super-admin) */}
+            <Route path="/aprovacoes" element={<AdminApproval />} />
 
             {/* Dashboard público (read-only) - qualquer um pode ver */}
             <Route path="/g/:grupoId" element={<Dashboard />} />
@@ -55,9 +59,9 @@ function AppRoutes() {
                                 <p style={{ marginBottom: 'var(--space-4)', color: 'var(--text-primary)' }}>
                                     Olá, <strong>{user.nome}</strong>! 👋
                                 </p>
-                                <Link 
-                                    to={user.isMotorista ? `/admin/${user.grupoId}` : `/g/${user.grupoId}`} 
-                                    className="btn btn-primary" 
+                                <Link
+                                    to={user.isMotorista ? `/admin/${user.grupoId}` : `/g/${user.grupoId}`}
+                                    className="btn btn-primary"
                                     style={{ marginBottom: 'var(--space-3)' }}
                                 >
                                     📊 Ir para o Dashboard

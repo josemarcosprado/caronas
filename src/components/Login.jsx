@@ -8,7 +8,7 @@ export default function Login() {
     const [senha, setSenha] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    
+
     const navigate = useNavigate();
     const location = useLocation();
     const { login } = useAuth();
@@ -20,10 +20,10 @@ export default function Login() {
 
         try {
             const telefoneNormalizado = telefone.replace(/\D/g, '');
-            
+
             // Gerar variantes do telefone para busca flexível
             const variantes = [telefoneNormalizado];
-            
+
             // Se NÃO começa com 55, adicionar variante com 55
             if (!telefoneNormalizado.startsWith('55')) {
                 variantes.push('55' + telefoneNormalizado);
@@ -86,6 +86,14 @@ export default function Login() {
             // Verificar senha
             if (membro.senha_hash !== senha) {
                 throw new Error('Senha incorreta.');
+            }
+
+            // Verificar status de aprovação
+            if (membro.status_aprovacao === 'pendente') {
+                throw new Error('Sua conta está aguardando aprovação. Você será notificado quando sua CNH for verificada.');
+            }
+            if (membro.status_aprovacao === 'rejeitado') {
+                throw new Error('Sua conta foi rejeitada. Entre em contato com o administrador para mais informações.');
             }
 
             // Salvar sessão via contexto

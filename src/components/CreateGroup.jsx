@@ -14,6 +14,8 @@ function CreateGroup() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [grupoCriado, setGrupoCriado] = useState(null);
+    const [cnhFile, setCnhFile] = useState(null);
+    const [cnhPreview, setCnhPreview] = useState(null);
     const [formData, setFormData] = useState({
         nome: '',
         horarioIda: '07:00',
@@ -26,6 +28,23 @@ function CreateGroup() {
         motoristaTelefone: '',
         motoristaSenha: ''
     });
+
+    const handleCnhChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            if (file.size > 5 * 1024 * 1024) {
+                setError('A imagem da CNH deve ter no máximo 5MB.');
+                return;
+            }
+            if (!file.type.startsWith('image/')) {
+                setError('O arquivo deve ser uma imagem (JPG, PNG, etc).');
+                return;
+            }
+            setCnhFile(file);
+            setCnhPreview(URL.createObjectURL(file));
+            setError('');
+        }
+    };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -52,6 +71,13 @@ function CreateGroup() {
             return;
         }
 
+        // Validate CNH
+        if (!cnhFile) {
+            setError('É obrigatório enviar uma foto da CNH para verificação.');
+            setLoading(false);
+            return;
+        }
+
         try {
             // 1. Criar o grupo
             const { data: grupo, error: grupoError } = await supabase
@@ -74,24 +100,44 @@ function CreateGroup() {
 
             if (grupoError) throw grupoError;
 
-            // 2. Criar o motorista como primeiro membro
+            // 2. Upload da CNH para o Supabase Storage
+            const cnhFileName = `${grupo.id}_${Date.now()}.${cnhFile.name.split('.').pop()}`;
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('cnh-uploads')
+                .upload(cnhFileName, cnhFile, {
+                    cacheControl: '3600',
+                    upsert: false
+                });
+
+            if (uploadError) throw new Error('Erro ao enviar foto da CNH: ' + uploadError.message);
+
+            // Obter URL pública da CNH
+            const { data: urlData } = supabase.storage
+                .from('cnh-uploads')
+                .getPublicUrl(cnhFileName);
+
+            const cnhUrl = urlData.publicUrl;
+
+            // 3. Criar o motorista como primeiro membro (pendente de aprovação)
             const { data: membro, error: membroError } = await supabase
                 .from('membros')
                 .insert({
                     grupo_id: grupo.id,
                     nome: formData.motoristaNome,
-                    telefone: phoneValidation.normalized.replace('+', ''), // Store without + for consistency
+                    telefone: phoneValidation.normalized.replace('+', ''),
                     is_motorista: true,
                     ativo: true,
                     dias_padrao: ['seg', 'ter', 'qua', 'qui', 'sex'],
-                    senha_hash: formData.motoristaSenha // TODO: usar hash real em produção
+                    senha_hash: formData.motoristaSenha,
+                    cnh_url: cnhUrl,
+                    status_aprovacao: 'pendente'
                 })
                 .select()
                 .single();
 
             if (membroError) throw membroError;
 
-            // 3. Atualizar grupo com motorista_id
+            // 4. Atualizar grupo com motorista_id
             const { error: updateError } = await supabase
                 .from('grupos')
                 .update({ motorista_id: membro.id })
@@ -99,18 +145,14 @@ function CreateGroup() {
 
             if (updateError) console.error('Erro ao atualizar motorista_id:', updateError);
 
-            // 4. Criar viagens da semana
+            // 5. Criar viagens da semana
             await criarViagensSemana(grupo.id, formData.horarioIda, formData.horarioVolta);
 
-            // 5. Fazer login automático do motorista
-            login({ ...membro, grupo_id: grupo.id }, 'motorista');
-
-            // 6. Salvar dados para tela de sucesso
+            // 6. NÃO fazer login automático — conta pendente de aprovação
             setGrupoCriado({
                 id: grupo.id,
                 nome: grupo.nome,
-                link: `${window.location.origin}/g/${grupo.id}`,
-                adminLink: `${window.location.origin}/admin/${grupo.id}`
+                pendente: true
             });
 
         } catch (err) {
@@ -166,53 +208,40 @@ function CreateGroup() {
 
     const isPorTrajeto = formData.modeloPrecificacao === 'por_trajeto';
 
-    // Tela de sucesso após criar grupo
+    // Tela de sucesso após criar grupo (pendente de aprovação)
     if (grupoCriado) {
         return (
             <div className="login-container">
                 <div className="login-card" style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>🎉</div>
+                    <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>⏳</div>
                     <h1 style={{ fontSize: 'var(--font-size-2xl)', marginBottom: 'var(--space-2)' }}>
                         Grupo Criado!
                     </h1>
-                    <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-6)' }}>
-                        <strong>{grupoCriado.nome}</strong> está pronto para uso.
+                    <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
+                        <strong>{grupoCriado.nome}</strong> foi criado com sucesso.
                     </p>
 
                     <div style={{
-                        background: 'var(--bg-secondary)',
-                        padding: 'var(--space-3)',
+                        background: 'var(--warning-bg, #fff3cd)',
+                        color: 'var(--warning, #856404)',
+                        padding: 'var(--space-4)',
                         borderRadius: 'var(--radius-md)',
                         marginBottom: 'var(--space-4)',
-                        wordBreak: 'break-all',
                         fontSize: 'var(--font-size-sm)'
                     }}>
-                        {grupoCriado.link}
+                        <strong>📋 Aguardando aprovação</strong>
+                        <p style={{ marginTop: 'var(--space-2)', marginBottom: 0 }}>
+                            Sua CNH foi enviada para verificação. Você receberá acesso ao painel
+                            de administração assim que sua conta for aprovada.
+                        </p>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
-                        <button
-                            className="btn btn-secondary"
-                            style={{ flex: 1 }}
-                            onClick={copiarLink}
-                        >
-                            📋 Copiar Link
-                        </button>
-                        <button
-                            className="btn btn-primary"
-                            style={{ flex: 1 }}
-                            onClick={() => navigate(`/admin/${grupoCriado.id}`)}
-                        >
-                            📊 Gerenciar Grupo
-                        </button>
-                    </div>
-
-                    <p style={{
-                        fontSize: 'var(--font-size-sm)',
-                        color: 'var(--text-muted)'
-                    }}>
-                        Compartilhe este link com os membros do grupo.
-                    </p>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={() => navigate('/')}
+                    >
+                        🏠 Voltar ao Início
+                    </button>
                 </div>
             </div>
         );
@@ -280,6 +309,43 @@ function CreateGroup() {
                         <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
                             Use esta senha para acessar o painel de administração
                         </small>
+                    </div>
+
+                    {/* Upload da CNH */}
+                    <div className="form-group">
+                        <label className="form-label">Foto da CNH (obrigatório)</label>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleCnhChange}
+                            style={{
+                                width: '100%',
+                                padding: 'var(--space-2)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-md)',
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-primary)',
+                                fontSize: 'var(--font-size-sm)'
+                            }}
+                        />
+                        <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
+                            Envie uma foto legível da sua CNH para verificação (máx. 5MB)
+                        </small>
+                        {cnhPreview && (
+                            <div style={{ marginTop: 'var(--space-2)' }}>
+                                <img
+                                    src={cnhPreview}
+                                    alt="Preview da CNH"
+                                    style={{
+                                        maxWidth: '100%',
+                                        maxHeight: '200px',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: '1px solid var(--border-color)',
+                                        objectFit: 'contain'
+                                    }}
+                                />
+                            </div>
+                        )}
                     </div>
 
                     <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
