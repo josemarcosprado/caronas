@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
@@ -16,7 +16,15 @@ export default function Dashboard({ isAdmin = false }) {
     const [viagens, setViagens] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [activeTab, setActiveTab] = useState('inicio');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const activeTab = useMemo(() => {
+        const tab = searchParams.get('tab');
+        const validTabs = ['inicio', 'viagens', 'membros', 'config'];
+        return validTabs.includes(tab) ? tab : 'inicio';
+    }, [searchParams]);
+    const changeTab = useCallback((tab) => {
+        setSearchParams({ tab }, { replace: false });
+    }, [setSearchParams]);
     const [editando, setEditando] = useState(false);
     const [formConfig, setFormConfig] = useState({});
 
@@ -223,7 +231,7 @@ export default function Dashboard({ isAdmin = false }) {
                 {availableTabs.map(tab => (
                     <button
                         key={tab}
-                        onClick={() => setActiveTab(tab)}
+                        onClick={() => changeTab(tab)}
                         style={{
                             padding: 'var(--space-2) var(--space-3)',
                             background: activeTab === tab ? 'var(--primary)' : 'transparent',
@@ -295,13 +303,13 @@ export default function Dashboard({ isAdmin = false }) {
                                 <>
                                     <button
                                         className="btn btn-secondary"
-                                        onClick={() => setActiveTab('config')}
+                                        onClick={() => changeTab('config')}
                                     >
                                         ⚙️ Configurar grupo
                                     </button>
                                     <button
                                         className="btn btn-secondary"
-                                        onClick={() => setActiveTab('membros')}
+                                        onClick={() => changeTab('membros')}
                                     >
                                         👥 Gerenciar membros
                                     </button>
@@ -312,7 +320,7 @@ export default function Dashboard({ isAdmin = false }) {
                             {!canEdit && (
                                 <button
                                     className="btn btn-secondary"
-                                    onClick={() => setActiveTab('membros')}
+                                    onClick={() => changeTab('membros')}
                                 >
                                     👥 Ver membros
                                 </button>
@@ -580,7 +588,7 @@ export default function Dashboard({ isAdmin = false }) {
                 <div className="empty-state">
                     <div className="icon">🔒</div>
                     <p>Apenas motoristas podem acessar as configurações.</p>
-                    <button className="btn btn-primary" onClick={() => setActiveTab('inicio')}>
+                    <button className="btn btn-primary" onClick={() => changeTab('inicio')}>
                         Voltar ao início
                     </button>
                 </div>
