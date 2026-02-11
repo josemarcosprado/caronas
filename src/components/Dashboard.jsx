@@ -7,10 +7,10 @@ export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
     const navigate = useNavigate();
     const { user, logout, isMotorista } = useAuth();
-    
+
     // Determinar se é admin: prop OU usuário logado como motorista
     const canEdit = isAdmin || isMotorista;
-    
+
     const [grupo, setGrupo] = useState(null);
     const [membros, setMembros] = useState([]);
     const [viagens, setViagens] = useState([]);
@@ -97,7 +97,7 @@ export default function Dashboard({ isAdmin = false }) {
     // Salvar configurações (apenas motoristas)
     const salvarConfig = async () => {
         if (!canEdit) return;
-        
+
         try {
             const { error } = await supabase
                 .from('grupos')
@@ -173,9 +173,9 @@ export default function Dashboard({ isAdmin = false }) {
 
     const motorista = membros.find(m => m.is_motorista);
     const shareLink = `${window.location.origin}/g/${grupoId}`;
-    
+
     // Tabs disponíveis baseado no role
-    const availableTabs = canEdit 
+    const availableTabs = canEdit
         ? ['inicio', 'viagens', 'membros', 'config']
         : ['inicio', 'viagens', 'membros'];
 
@@ -196,7 +196,7 @@ export default function Dashboard({ isAdmin = false }) {
                         }
                     </p>
                 </div>
-                
+
                 {/* User info & logout */}
                 {user && (
                     <div style={{ textAlign: 'right' }}>
@@ -217,6 +217,16 @@ export default function Dashboard({ isAdmin = false }) {
                             Sair
                         </button>
                     </div>
+                )}
+                {/* Botão para entrar no grupo (visitantes não logados) */}
+                {!user && !isAdmin && (
+                    <Link
+                        to={`/entrar/${grupoId}`}
+                        className="btn btn-primary"
+                        style={{ fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' }}
+                    >
+                        📋 Entrar no Grupo
+                    </Link>
                 )}
             </header>
 
@@ -297,7 +307,7 @@ export default function Dashboard({ isAdmin = false }) {
                             >
                                 📋 Copiar link do grupo
                             </button>
-                            
+
                             {/* Apenas motoristas veem esses botões */}
                             {canEdit && (
                                 <>
@@ -315,7 +325,7 @@ export default function Dashboard({ isAdmin = false }) {
                                     </button>
                                 </>
                             )}
-                            
+
                             {/* Passageiros veem apenas ver membros */}
                             {!canEdit && (
                                 <button

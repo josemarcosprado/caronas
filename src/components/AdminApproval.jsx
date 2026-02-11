@@ -31,13 +31,14 @@ export default function AdminApproval() {
                     id,
                     nome,
                     telefone,
+                    is_motorista,
                     cnh_url,
+                    carteirinha_url,
                     status_aprovacao,
                     created_at,
                     grupo_id,
                     grupos ( nome )
                 `)
-                .eq('is_motorista', true)
                 .in('status_aprovacao', ['pendente'])
                 .order('created_at', { ascending: true });
 
@@ -52,7 +53,7 @@ export default function AdminApproval() {
 
     const atualizarStatus = async (membroId, novoStatus) => {
         const acao = novoStatus === 'aprovado' ? 'aprovar' : 'rejeitar';
-        if (!confirm(`Tem certeza que deseja ${acao} este motorista?`)) return;
+        if (!confirm(`Tem certeza que deseja ${acao} este membro?`)) return;
 
         try {
             const { error } = await supabase
@@ -123,7 +124,7 @@ export default function AdminApproval() {
                 <div>
                     <h1 className="header-title">
                         <span className="icon">🔐</span>
-                        Aprovações de Motoristas
+                        Aprovações de Membros
                     </h1>
                     <p className="header-subtitle">
                         {pendentes.length} pendente{pendentes.length !== 1 ? 's' : ''}
@@ -152,18 +153,30 @@ export default function AdminApproval() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                     {pendentes.map(membro => (
                         <div key={membro.id} className="day-detail">
-                            {/* Info do motorista */}
+                            {/* Info do membro */}
                             <div style={{ marginBottom: 'var(--space-3)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                     <div>
-                                        <h3 style={{ marginBottom: 'var(--space-1)' }}>
-                                            {membro.nome}
-                                        </h3>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+                                            <h3 style={{ margin: 0 }}>
+                                                {membro.nome}
+                                            </h3>
+                                            <span style={{
+                                                padding: '2px 8px',
+                                                borderRadius: 'var(--radius-sm)',
+                                                fontSize: 'var(--font-size-xs)',
+                                                fontWeight: 600,
+                                                background: membro.is_motorista ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
+                                                color: membro.is_motorista ? 'var(--info, #004085)' : 'var(--success, #155724)'
+                                            }}>
+                                                {membro.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
+                                            </span>
+                                        </div>
                                         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
                                             📱 {membro.telefone}
                                         </p>
                                         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>
-                                            🚗 Grupo: {membro.grupos?.nome || 'Desconhecido'}
+                                            Grupo: {membro.grupos?.nome || 'Desconhecido'}
                                         </p>
                                     </div>
                                     <span style={{
@@ -175,47 +188,48 @@ export default function AdminApproval() {
                                 </div>
                             </div>
 
-                            {/* Foto da CNH */}
-                            {membro.cnh_url ? (
-                                <div style={{ marginBottom: 'var(--space-3)' }}>
-                                    <p style={{
-                                        fontSize: 'var(--font-size-sm)',
-                                        color: 'var(--text-secondary)',
-                                        marginBottom: 'var(--space-2)'
-                                    }}>
-                                        📄 Foto da CNH:
-                                    </p>
-                                    <img
-                                        src={membro.cnh_url}
-                                        alt={`CNH de ${membro.nome}`}
-                                        onClick={() => setImagemExpandida(membro.cnh_url)}
-                                        style={{
-                                            maxWidth: '100%',
-                                            maxHeight: '300px',
-                                            borderRadius: 'var(--radius-md)',
-                                            border: '1px solid var(--border-color)',
-                                            cursor: 'pointer',
-                                            objectFit: 'contain'
-                                        }}
-                                    />
-                                    <small style={{
-                                        display: 'block',
-                                        color: 'var(--text-muted)',
-                                        fontSize: 'var(--font-size-xs)',
-                                        marginTop: 'var(--space-1)'
-                                    }}>
-                                        Clique na imagem para ampliar
-                                    </small>
-                                </div>
-                            ) : (
-                                <p style={{
-                                    color: 'var(--error)',
-                                    fontSize: 'var(--font-size-sm)',
-                                    marginBottom: 'var(--space-3)'
-                                }}>
-                                    ⚠️ CNH não enviada
-                                </p>
-                            )}
+                            {/* Documentos */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
+                                {/* CNH (apenas motoristas) */}
+                                {membro.is_motorista && (
+                                    membro.cnh_url ? (
+                                        <div>
+                                            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}>
+                                                🪪 Foto da CNH:
+                                            </p>
+                                            <img
+                                                src={membro.cnh_url}
+                                                alt={`CNH de ${membro.nome}`}
+                                                onClick={() => setImagemExpandida(membro.cnh_url)}
+                                                style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <p style={{ color: 'var(--error)', fontSize: 'var(--font-size-sm)' }}>⚠️ CNH não enviada</p>
+                                    )
+                                )}
+
+                                {/* Carteirinha (todos) */}
+                                {membro.carteirinha_url ? (
+                                    <div>
+                                        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}>
+                                            🎓 Carteirinha de Estudante:
+                                        </p>
+                                        <img
+                                            src={membro.carteirinha_url}
+                                            alt={`Carteirinha de ${membro.nome}`}
+                                            onClick={() => setImagemExpandida(membro.carteirinha_url)}
+                                            style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
+                                        />
+                                    </div>
+                                ) : (
+                                    <p style={{ color: 'var(--error)', fontSize: 'var(--font-size-sm)' }}>⚠️ Carteirinha não enviada</p>
+                                )}
+
+                                <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
+                                    Clique nas imagens para ampliar
+                                </small>
+                            </div>
 
                             {/* Botões de ação */}
                             <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
@@ -264,7 +278,7 @@ export default function AdminApproval() {
                 >
                     <img
                         src={imagemExpandida}
-                        alt="CNH ampliada"
+                        alt="Documento ampliado"
                         style={{
                             maxWidth: '100%',
                             maxHeight: '100%',

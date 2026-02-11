@@ -4,6 +4,7 @@ import Dashboard from './components/Dashboard.jsx';
 import Login from './components/Login.jsx';
 import CreateGroup from './components/CreateGroup.jsx';
 import AdminApproval from './components/AdminApproval.jsx';
+import JoinGroup from './components/JoinGroup.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 
 function AppRoutes() {
@@ -24,6 +25,9 @@ function AppRoutes() {
 
             {/* Painel de aprovações de motoristas (super-admin) */}
             <Route path="/aprovacoes" element={<AdminApproval />} />
+
+            {/* Entrar em um grupo (passageiro) */}
+            <Route path="/entrar/:grupoId" element={<JoinGroup />} />
 
             {/* Dashboard público (read-only) - qualquer um pode ver */}
             <Route path="/g/:grupoId" element={<Dashboard />} />
