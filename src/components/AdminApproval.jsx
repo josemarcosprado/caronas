@@ -33,7 +33,7 @@ export default function AdminApproval() {
                     telefone,
                     is_motorista,
                     cnh_url,
-                    carteirinha_url,
+                    matricula,
                     status_aprovacao,
                     created_at,
                     grupo_id,
@@ -209,26 +209,33 @@ export default function AdminApproval() {
                                     )
                                 )}
 
-                                {/* Carteirinha (todos) */}
-                                {membro.carteirinha_url ? (
+                                {/* Matrícula (todos) */}
+                                {membro.matricula ? (
                                     <div>
                                         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}>
-                                            🎓 Carteirinha de Estudante:
+                                            🎓 Matrícula:
                                         </p>
-                                        <img
-                                            src={membro.carteirinha_url}
-                                            alt={`Carteirinha de ${membro.nome}`}
-                                            onClick={() => setImagemExpandida(membro.carteirinha_url)}
-                                            style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
-                                        />
+                                        <div style={{
+                                            padding: 'var(--space-3)',
+                                            background: 'var(--bg-secondary)',
+                                            borderRadius: 'var(--radius-md)',
+                                            border: '1px solid var(--border-color)',
+                                            fontSize: 'var(--font-size-lg)',
+                                            fontWeight: 600,
+                                            letterSpacing: '0.05em'
+                                        }}>
+                                            {membro.matricula}
+                                        </div>
                                     </div>
                                 ) : (
-                                    <p style={{ color: 'var(--error)', fontSize: 'var(--font-size-sm)' }}>⚠️ Carteirinha não enviada</p>
+                                    <p style={{ color: 'var(--error)', fontSize: 'var(--font-size-sm)' }}>⚠️ Matrícula não informada</p>
                                 )}
 
-                                <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
-                                    Clique nas imagens para ampliar
-                                </small>
+                                {membro.is_motorista && membro.cnh_url && (
+                                    <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
+                                        Clique na imagem da CNH para ampliar
+                                    </small>
+                                )}
                             </div>
 
                             {/* Botões de ação */}
