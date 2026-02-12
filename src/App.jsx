@@ -6,6 +6,7 @@ import Register from './components/Register.jsx';
 import CreateGroup from './components/CreateGroup.jsx';
 import AdminApproval from './components/AdminApproval.jsx';
 import JoinGroup from './components/JoinGroup.jsx';
+import ForgotPassword from './components/ForgotPassword.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AvailableGroups from './components/AvailableGroups.jsx';
 
@@ -27,6 +28,7 @@ function AppRoutes() {
 
             {/* Login */}
             <Route path="/login" element={<Login />} />
+            <Route path="/recuperar-senha" element={<ForgotPassword />} />
             <Route path="/admin/login" element={<Navigate to="/login" replace />} />
 
             {/* Criar novo grupo (requer login) */}

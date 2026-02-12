@@ -130,6 +130,11 @@ export default function Login() {
                             onChange={(e) => setSenha(e.target.value)}
                             required
                         />
+                        <div style={{ textAlign: 'right', marginTop: 'var(--space-2)' }}>
+                            <Link to="/recuperar-senha" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>
+                                Esqueceu a senha?
+                            </Link>
+                        </div>
                     </div>
 
                     {error && (

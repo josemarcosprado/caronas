@@ -658,6 +658,160 @@ app.get('/api/invite-link/:grupoId', async (req, res) => {
 });
 
 /**
+ * API: Solicitar redefinição de senha (Esqueci minha senha)
+ * Gera código, salva no banco e envia por WhatsApp
+ */
+app.post('/api/auth/request-reset', async (req, res) => {
+    try {
+        const { telefone } = req.body;
+
+        if (!telefone) {
+            return res.status(400).json({ error: 'Telefone é obrigatório' });
+        }
+
+        // Normalizar telefone (apenas números)
+        const telefoneNumeros = telefone.replace(/\D/g, '');
+
+        // Validar se usuário existe
+        // Tentar encontrar variantes (com ou sem 55)
+        const variantes = [telefoneNumeros];
+        if (!telefoneNumeros.startsWith('55')) {
+            variantes.push('55' + telefoneNumeros);
+        }
+        if (telefoneNumeros.startsWith('55') && telefoneNumeros.length > 2) {
+            variantes.push(telefoneNumeros.substring(2));
+        }
+
+        const { data: usuario, error: userError } = await supabase
+            .from('usuarios')
+            .select('id, telefone, nome')
+            .in('telefone', variantes)
+            .limit(1)
+            .single();
+
+        if (userError || !usuario) {
+            // Por segurança, não revelar que usuário não existe, mas logar
+            console.log(`⚠️ Tentativa de reset para telefone não cadastrado: ${telefoneNumeros}`);
+            return res.json({ success: true, message: 'Se o telefone estiver cadastrado, você receberá um código.' });
+        }
+
+        // Gerar código de 6 dígitos
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Data de expiração (15 minutos)
+        const expiresAt = new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+        // Salvar código no banco (usando o telefone exato do usuário no banco)
+        // Primeiro, invalidar códigos anteriores
+        await supabase
+            .from('codigos_verificacao')
+            .delete()
+            .eq('telefone', usuario.telefone);
+
+        // Inserir novo código
+        const { error: insertError } = await supabase
+            .from('codigos_verificacao')
+            .insert({
+                telefone: usuario.telefone,
+                codigo: codigo,
+                expires_at: expiresAt.toISOString()
+            });
+
+        if (insertError) {
+            console.error('Erro ao salvar código:', insertError);
+            throw new Error('Erro interno ao gerar código.');
+        }
+
+        // Enviar por WhatsApp
+        const whatsappId = `${usuario.telefone}@s.whatsapp.net`;
+        const mensagem = `🔐 *Cajurona: Redefinição de Senha*\n\nOlá, ${usuario.nome}!\n\nSeu código de verificação é: *${codigo}*\n\nEle é válido por 15 minutos. Se você não solicitou isso, ignore esta mensagem.`;
+
+        await enviarMensagem(whatsappId, mensagem, false);
+
+        console.log(`✅ Código de reset enviado para ${usuario.nome} (${usuario.telefone})`);
+
+        res.json({ success: true, message: 'Código enviado com sucesso.' });
+
+    } catch (error) {
+        console.error('❌ Erro no request-reset:', error);
+        res.status(500).json({ error: 'Erro ao processar solicitação.' });
+    }
+});
+
+/**
+ * API: Redefinir senha com código
+ */
+app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+        const { telefone, codigo, novaSenha } = req.body;
+
+        if (!telefone || !codigo || !novaSenha) {
+            return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
+        }
+
+        const telefoneNumeros = telefone.replace(/\D/g, '');
+
+        // 1. Encontrar o telefone correto do usuário (lidar com variantes)
+        const variantes = [telefoneNumeros];
+        if (!telefoneNumeros.startsWith('55')) {
+            variantes.push('55' + telefoneNumeros);
+        }
+        if (telefoneNumeros.startsWith('55') && telefoneNumeros.length > 2) {
+            variantes.push(telefoneNumeros.substring(2));
+        }
+
+        const { data: usuario, error: userError } = await supabase
+            .from('usuarios')
+            .select('id, telefone')
+            .in('telefone', variantes)
+            .limit(1)
+            .single();
+
+        if (userError || !usuario) {
+            return res.status(400).json({ error: 'Usuário não encontrado.' });
+        }
+
+        // 2. Verificar o código
+        const { data: registroCodigo, error: codeError } = await supabase
+            .from('codigos_verificacao')
+            .select('*')
+            .eq('telefone', usuario.telefone)
+            .eq('codigo', codigo)
+            .gt('expires_at', new Date().toISOString()) // Não expirado
+            .single();
+
+        if (codeError || !registroCodigo) {
+            return res.status(400).json({ error: 'Código inválido ou expirado.' });
+        }
+
+        // 3. Atualizar senha
+        const { error: updateError } = await supabase
+            .from('usuarios')
+            .update({ senha_hash: novaSenha }) // Nota: Idealmente seria hash real, mantendo padrão atual
+            .eq('id', usuario.id);
+
+        if (updateError) {
+            throw new Error('Erro ao atualizar senha.');
+        }
+
+        // 4. Deletar código usado
+        await supabase
+            .from('codigos_verificacao')
+            .delete()
+            .eq('id', registroCodigo.id);
+
+        console.log(`✅ Senha redefinida para usuário: ${usuario.telefone}`);
+
+        res.json({ success: true, message: 'Senha redefinida com sucesso!' });
+
+    } catch (error) {
+        console.error('❌ Erro no reset-password:', error);
+        res.status(500).json({ error: error.message || 'Erro ao redefinir senha.' });
+    }
+});
+
+/**
  * Health check
  */
 app.get('/health', (req, res) => {
