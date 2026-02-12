@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Login from './components/Login.jsx';
+import Register from './components/Register.jsx';
 import CreateGroup from './components/CreateGroup.jsx';
 import AdminApproval from './components/AdminApproval.jsx';
 import JoinGroup from './components/JoinGroup.jsx';
@@ -21,19 +22,34 @@ function AppRoutes() {
 
     return (
         <Routes>
-            {/* Criar novo grupo */}
-            <Route path="/criar" element={<CreateGroup />} />
+            {/* Cadastro */}
+            <Route path="/cadastro" element={<Register />} />
 
-            {/* Painel de aprovações de motoristas (super-admin) */}
+            {/* Login */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+
+            {/* Criar novo grupo (requer login) */}
+            <Route path="/criar" element={
+                <ProtectedRoute>
+                    <CreateGroup />
+                </ProtectedRoute>
+            } />
+
+            {/* Painel de aprovações (super-admin) */}
             <Route path="/aprovacoes" element={<AdminApproval />} />
 
-            {/* Entrar em um grupo (passageiro) */}
-            <Route path="/entrar/:grupoId" element={<JoinGroup />} />
+            {/* Entrar em um grupo (requer login) */}
+            <Route path="/entrar/:grupoId" element={
+                <ProtectedRoute>
+                    <JoinGroup />
+                </ProtectedRoute>
+            } />
 
-            {/* Dashboard público (read-only) - qualquer um pode ver */}
+            {/* Dashboard público (read-only) */}
             <Route path="/g/:grupoId" element={<Dashboard />} />
 
-            {/* Lista de grupos disponíveis (para quem não tem grupo ou quertrocar) */}
+            {/* Lista de grupos disponíveis */}
             <Route path="/grupos" element={
                 <div className="container">
                     <h1 style={{ marginBottom: 'var(--space-4)', textAlign: 'center' }}>🚗 Grupos Disponíveis</h1>
@@ -44,11 +60,7 @@ function AppRoutes() {
                 </div>
             } />
 
-            {/* Login */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/admin/login" element={<Navigate to="/login" replace />} />
-
-            {/* Dashboard admin (protegido - apenas motoristas) */}
+            {/* Dashboard admin (protegido - motoristas) */}
             <Route
                 path="/admin/:grupoId"
                 element={
@@ -75,12 +87,25 @@ function AppRoutes() {
                                 <p style={{ marginBottom: 'var(--space-4)', color: 'var(--text-primary)' }}>
                                     Olá, <strong>{user.nome}</strong>! 👋
                                 </p>
-                                <Link
-                                    to={user.isMotorista ? `/admin/${user.grupoId}` : `/g/${user.grupoId}`}
-                                    className="btn btn-primary"
-                                    style={{ marginBottom: 'var(--space-3)' }}
-                                >
-                                    📊 Ir para o Dashboard
+                                {user.grupoId ? (
+                                    <Link
+                                        to={user.isMotorista ? `/admin/${user.grupoId}` : `/g/${user.grupoId}`}
+                                        className="btn btn-primary"
+                                        style={{ marginBottom: 'var(--space-3)' }}
+                                    >
+                                        📊 Ir para o Dashboard
+                                    </Link>
+                                ) : (
+                                    <Link
+                                        to="/grupos"
+                                        className="btn btn-primary"
+                                        style={{ marginBottom: 'var(--space-3)' }}
+                                    >
+                                        🔍 Ver Grupos Disponíveis
+                                    </Link>
+                                )}
+                                <Link to="/criar" className="btn btn-secondary" style={{ marginBottom: 'var(--space-3)' }}>
+                                    ✨ Criar Novo Grupo
                                 </Link>
                             </>
                         ) : (
@@ -88,8 +113,8 @@ function AppRoutes() {
                                 <Link to="/login" className="btn btn-primary" style={{ marginBottom: 'var(--space-3)' }}>
                                     🔑 Entrar
                                 </Link>
-                                <Link to="/criar" className="btn btn-secondary" style={{ marginBottom: 'var(--space-4)' }}>
-                                    ✨ Criar Novo Grupo
+                                <Link to="/cadastro" className="btn btn-secondary" style={{ marginBottom: 'var(--space-3)' }}>
+                                    📋 Cadastre-se
                                 </Link>
                             </>
                         )}
@@ -99,7 +124,10 @@ function AppRoutes() {
                             color: 'var(--text-muted)',
                             marginTop: 'var(--space-4)'
                         }}>
-                            Já tem um grupo? Acesse pelo link que você recebeu.
+                            {user
+                                ? 'Crie um grupo ou entre em um existente.'
+                                : 'Crie sua conta para começar.'
+                            }
                         </p>
                     </div>
                 </div>

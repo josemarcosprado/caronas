@@ -530,10 +530,11 @@ app.post('/api/create-whatsapp-group', async (req, res) => {
         }
 
         // Buscar telefone do motorista para adicionar como participante
+        // motorista_id agora referencia usuarios.id
         let participantes = [];
         if (grupo.motorista_id) {
             const { data: motorista } = await supabase
-                .from('membros')
+                .from('usuarios')
                 .select('telefone')
                 .eq('id', grupo.motorista_id)
                 .single();

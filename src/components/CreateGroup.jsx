@@ -1,16 +1,16 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
-import { validatePhone } from '../lib/phoneUtils.js';
-import PhoneInput from './PhoneInput.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 /**
  * Componente para criar um novo grupo de caronas
+ * Requer login prévio. Dados do motorista vêm da conta (usuarios).
+ * Se CNH não aprovada, permite upload inline.
  */
 function CreateGroup() {
     const navigate = useNavigate();
-    const { login } = useAuth();
+    const { user, refreshSession } = useAuth();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [grupoCriado, setGrupoCriado] = useState(null);
@@ -23,12 +23,11 @@ function CreateGroup() {
         modeloPrecificacao: 'semanal',
         valorSemanal: '',
         valorTrajeto: '',
-        tempoLimiteCancelamento: '30',
-        motoristaNome: '',
-        motoristaTelefone: '',
-        motoristaSenha: '',
-        matricula: ''
+        tempoLimiteCancelamento: '30'
     });
+
+    // Verificar se usuário tem CNH (pode ser motorista)
+    const temCnh = user?.cnhUrl || user?.cnhStatus !== 'nao_enviada';
 
     const handleCnhChange = (e) => {
         const file = e.target.files[0];
@@ -47,8 +46,6 @@ function CreateGroup() {
         }
     };
 
-
-
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -59,41 +56,45 @@ function CreateGroup() {
         setLoading(true);
         setError('');
 
-        // Validate phone before submitting
-        const phoneValidation = validatePhone(formData.motoristaTelefone);
-        if (!phoneValidation.valid) {
-            setError(`Telefone inválido: ${phoneValidation.error}`);
-            setLoading(false);
-            return;
-        }
-
-        // Validate password
-        if (!formData.motoristaSenha || formData.motoristaSenha.length < 4) {
-            setError('A senha deve ter pelo menos 4 caracteres.');
-            setLoading(false);
-            return;
-        }
-
-        // Validate CNH
-        if (!cnhFile) {
-            setError('É obrigatório enviar uma foto da CNH para verificação.');
-            setLoading(false);
-            return;
-        }
-
-        // Validate matrícula
-        if (!formData.matricula || !formData.matricula.trim()) {
-            setError('É obrigatório informar o número de matrícula.');
+        // Precisa de CNH para ser motorista
+        if (!temCnh && !cnhFile) {
+            setError('É obrigatório enviar uma foto da CNH para criar um grupo como motorista.');
             setLoading(false);
             return;
         }
 
         try {
+            // Upload da CNH se fornecida agora
+            let cnhUrl = user?.cnhUrl || null;
+            if (cnhFile) {
+                const cnhFileName = `user_${user.telefone}_${Date.now()}.${cnhFile.name.split('.').pop()}`;
+                const { error: uploadError } = await supabase.storage
+                    .from('cnh-uploads')
+                    .upload(cnhFileName, cnhFile, {
+                        cacheControl: '3600',
+                        upsert: false
+                    });
+
+                if (uploadError) throw new Error('Erro ao enviar foto da CNH: ' + uploadError.message);
+
+                const { data: urlData } = supabase.storage
+                    .from('cnh-uploads')
+                    .getPublicUrl(cnhFileName);
+                cnhUrl = urlData.publicUrl;
+
+                // Atualizar CNH no perfil do usuário
+                await supabase
+                    .from('usuarios')
+                    .update({ cnh_url: cnhUrl, cnh_status: 'pendente' })
+                    .eq('id', user.id);
+            }
+
             // 1. Criar o grupo
             const { data: grupo, error: grupoError } = await supabase
                 .from('grupos')
                 .insert({
                     nome: formData.nome,
+                    motorista_id: user.id, // Agora referencia usuarios.id diretamente
                     horario_ida: formData.horarioIda,
                     horario_volta: formData.horarioVolta,
                     modelo_precificacao: formData.modeloPrecificacao,
@@ -110,58 +111,26 @@ function CreateGroup() {
 
             if (grupoError) throw grupoError;
 
-            // 2. Upload da CNH para o Supabase Storage
-            const cnhFileName = `${grupo.id}_${Date.now()}.${cnhFile.name.split('.').pop()}`;
-            const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('cnh-uploads')
-                .upload(cnhFileName, cnhFile, {
-                    cacheControl: '3600',
-                    upsert: false
-                });
-
-            if (uploadError) throw new Error('Erro ao enviar foto da CNH: ' + uploadError.message);
-
-            // Obter URL pública da CNH
-            const { data: urlData } = supabase.storage
-                .from('cnh-uploads')
-                .getPublicUrl(cnhFileName);
-
-            const cnhUrl = urlData.publicUrl;
-
-
-
-            // 4. Criar o motorista como primeiro membro (pendente de aprovação)
-            const { data: membro, error: membroError } = await supabase
+            // 2. Criar membro (associação grupo ↔ usuário)
+            const { error: membroError } = await supabase
                 .from('membros')
                 .insert({
                     grupo_id: grupo.id,
-                    nome: formData.motoristaNome,
-                    telefone: phoneValidation.normalized.replace('+', ''),
+                    usuario_id: user.id,
+                    nome: user.nome,
+                    telefone: user.telefone,
                     is_motorista: true,
                     ativo: true,
                     dias_padrao: ['seg', 'ter', 'qua', 'qui', 'sex'],
-                    senha_hash: formData.motoristaSenha,
-                    cnh_url: cnhUrl,
-                    matricula: formData.matricula.trim(),
-                    status_aprovacao: 'pendente'
-                })
-                .select()
-                .single();
+                    status_aprovacao: 'aprovado' // Criador é automaticamente aprovado
+                });
 
             if (membroError) throw membroError;
 
-            // 4. Atualizar grupo com motorista_id
-            const { error: updateError } = await supabase
-                .from('grupos')
-                .update({ motorista_id: membro.id })
-                .eq('id', grupo.id);
-
-            if (updateError) console.error('Erro ao atualizar motorista_id:', updateError);
-
-            // 5. Criar viagens da semana
+            // 3. Criar viagens da semana
             await criarViagensSemana(grupo.id, formData.horarioIda, formData.horarioVolta);
 
-            // 6. Criar grupo no WhatsApp via bot API
+            // 4. Criar grupo no WhatsApp via bot API
             let inviteLink = null;
             try {
                 const botResponse = await fetch('/api/create-whatsapp-group', {
@@ -180,11 +149,12 @@ function CreateGroup() {
                 console.warn('Aviso: Bot não disponível para criar grupo WhatsApp:', botErr.message);
             }
 
-            // 7. NÃO fazer login automático — conta pendente de aprovação
+            // 5. Atualizar sessão para incluir novo grupo
+            await refreshSession();
+
             setGrupoCriado({
                 id: grupo.id,
                 nome: grupo.nome,
-                pendente: true,
                 inviteLink
             });
 
@@ -199,19 +169,17 @@ function CreateGroup() {
     // Função para criar viagens da semana
     const criarViagensSemana = async (grupoId, horarioIda, horarioVolta) => {
         const hoje = new Date();
-        const diaSemana = hoje.getDay(); // 0=dom, 1=seg, ...
+        const diaSemana = hoje.getDay();
         const viagens = [];
 
-        // Criar viagens para seg-sex desta semana (ou próxima se já passou)
         for (let dow = 1; dow <= 5; dow++) {
             let diff = dow - diaSemana;
-            if (diff < 0) diff += 7; // Próxima semana se já passou
+            if (diff < 0) diff += 7;
 
             const data = new Date(hoje);
             data.setDate(hoje.getDate() + diff);
             const dataStr = data.toISOString().split('T')[0];
 
-            // Viagem de ida
             viagens.push({
                 grupo_id: grupoId,
                 data: dataStr,
@@ -220,7 +188,6 @@ function CreateGroup() {
                 status: 'agendada'
             });
 
-            // Viagem de volta
             viagens.push({
                 grupo_id: grupoId,
                 data: dataStr,
@@ -243,7 +210,7 @@ function CreateGroup() {
 
     const isPorTrajeto = formData.modeloPrecificacao === 'por_trajeto';
 
-    // Tela de sucesso após criar grupo (pendente de aprovação)
+    // Tela de sucesso
     if (grupoCriado) {
         return (
             <div className="login-container">
@@ -289,42 +256,11 @@ function CreateGroup() {
                         </div>
                     )}
 
-                    {!grupoCriado.inviteLink && (
-                        <div style={{
-                            background: 'var(--info-bg, #dbeafe)',
-                            color: 'var(--info, #1e40af)',
-                            padding: 'var(--space-4)',
-                            borderRadius: 'var(--radius-md)',
-                            marginBottom: 'var(--space-4)',
-                            fontSize: 'var(--font-size-sm)'
-                        }}>
-                            <strong>ℹ️ Grupo WhatsApp</strong>
-                            <p style={{ marginTop: 'var(--space-2)', marginBottom: 0 }}>
-                                O link de convite do WhatsApp estará disponível no painel após a aprovação.
-                            </p>
-                        </div>
-                    )}
-
-                    <div style={{
-                        background: 'var(--info-bg, #dbeafe)',
-                        color: 'var(--info, #1e40af)',
-                        padding: 'var(--space-4)',
-                        borderRadius: 'var(--radius-md)',
-                        marginBottom: 'var(--space-4)',
-                        fontSize: 'var(--font-size-sm)'
-                    }}>
-                        <strong>📋 Verificação em andamento</strong>
-                        <p style={{ marginTop: 'var(--space-2)', marginBottom: 0 }}>
-                            Sua CNH e matrícula foram enviadas para verificação. Você já pode
-                            acessar o painel e gerenciar seu grupo normalmente.
-                        </p>
-                    </div>
-
                     <button
                         className="btn btn-primary"
-                        onClick={() => navigate('/')}
+                        onClick={() => navigate(`/admin/${grupoCriado.id}`)}
                     >
-                        🔑 Fazer Login
+                        📊 Ir para o Dashboard
                     </button>
                 </div>
             </div>
@@ -336,6 +272,10 @@ function CreateGroup() {
             <div className="login-card">
                 <h1 className="login-title">
                     🚗 Criar Grupo
+                    <br />
+                    <span style={{ fontSize: '0.9rem', fontWeight: 400, color: 'var(--text-secondary)' }}>
+                        Motorista: {user?.nome}
+                    </span>
                 </h1>
 
                 <form onSubmit={handleSubmit}>
@@ -352,102 +292,44 @@ function CreateGroup() {
                         />
                     </div>
 
-                    <div className="form-group">
-                        <label className="form-label">Seu Nome (Motorista)</label>
-                        <input
-                            type="text"
-                            name="motoristaNome"
-                            className="form-input"
-                            placeholder="Ex: João Silva"
-                            value={formData.motoristaNome}
-                            onChange={handleChange}
-                            required
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Seu Telefone</label>
-                        <PhoneInput
-                            value={formData.motoristaTelefone}
-                            onChange={(value) => setFormData(prev => ({ ...prev, motoristaTelefone: value }))}
-                            placeholder="+55 79 99999-9999"
-                            required
-                        />
-                        <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
-                            Inclua o código do país (ex: +55 para Brasil)
-                        </small>
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Sua Senha</label>
-                        <input
-                            type="password"
-                            name="motoristaSenha"
-                            className="form-input"
-                            placeholder="Mínimo 4 caracteres"
-                            value={formData.motoristaSenha}
-                            onChange={handleChange}
-                            required
-                            minLength={4}
-                        />
-                        <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
-                            Use esta senha para acessar o painel de administração
-                        </small>
-                    </div>
-
-                    {/* Upload da CNH */}
-                    <div className="form-group">
-                        <label className="form-label">Foto da CNH (obrigatório)</label>
-                        <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleCnhChange}
-                            style={{
-                                width: '100%',
-                                padding: 'var(--space-2)',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: 'var(--radius-md)',
-                                background: 'var(--bg-secondary)',
-                                color: 'var(--text-primary)',
-                                fontSize: 'var(--font-size-sm)'
-                            }}
-                        />
-                        <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
-                            Envie uma foto legível da sua CNH para verificação (máx. 5MB)
-                        </small>
-                        {cnhPreview && (
-                            <div style={{ marginTop: 'var(--space-2)' }}>
-                                <img
-                                    src={cnhPreview}
-                                    alt="Preview da CNH"
-                                    style={{
-                                        maxWidth: '100%',
-                                        maxHeight: '200px',
-                                        borderRadius: 'var(--radius-md)',
-                                        border: '1px solid var(--border-color)',
-                                        objectFit: 'contain'
-                                    }}
-                                />
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Número de Matrícula */}
-                    <div className="form-group">
-                        <label className="form-label">Número de Matrícula (obrigatório)</label>
-                        <input
-                            type="text"
-                            name="matricula"
-                            className="form-input"
-                            placeholder="Ex: 202100012345"
-                            value={formData.matricula}
-                            onChange={handleChange}
-                            required
-                        />
-                        <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
-                            Digite o número de matrícula da sua instituição
-                        </small>
-                    </div>
+                    {/* CNH upload — só se ainda não tem */}
+                    {!temCnh && (
+                        <div className="form-group">
+                            <label className="form-label">Foto da CNH (obrigatório para motorista)</label>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleCnhChange}
+                                style={{
+                                    width: '100%',
+                                    padding: 'var(--space-2)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: 'var(--radius-md)',
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: 'var(--font-size-sm)'
+                                }}
+                            />
+                            <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
+                                Envie uma foto legível da sua CNH para verificação (máx. 5MB)
+                            </small>
+                            {cnhPreview && (
+                                <div style={{ marginTop: 'var(--space-2)' }}>
+                                    <img
+                                        src={cnhPreview}
+                                        alt="Preview da CNH"
+                                        style={{
+                                            maxWidth: '100%',
+                                            maxHeight: '200px',
+                                            borderRadius: 'var(--radius-md)',
+                                            border: '1px solid var(--border-color)',
+                                            objectFit: 'contain'
+                                        }}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                         <div className="form-group" style={{ flex: 1 }}>
@@ -570,7 +452,9 @@ function CreateGroup() {
                     color: 'var(--text-muted)',
                     textAlign: 'center'
                 }}>
-                    Após criar, você receberá um link para compartilhar com o grupo.
+                    <Link to="/" style={{ color: 'var(--accent-primary)' }}>
+                        ← Voltar
+                    </Link>
                 </p>
             </div>
         </div>

@@ -9,7 +9,8 @@ import { DIAS_SEMANA_FULL } from '../lib/database.types.js';
 import { getPhoneLookupFormats } from '../lib/phoneUtils.js';
 
 /**
- * Obtém ou cria membro pelo telefone
+ * Obtém membro pelo telefone
+ * Busca em `usuarios` primeiro, depois encontra o `membros` correspondente
  * @param {string} telefone 
  * @param {string} whatsappId
  * @returns {Promise<import('../lib/database.types.js').Membro|null>}
@@ -21,31 +22,61 @@ export async function getOrCreateMembro(telefone, whatsappId) {
     const telefonesParaBuscar = getPhoneLookupFormats(telefone);
     console.log(`🔍 Tentando formatos: ${telefonesParaBuscar.join(', ')}`);
 
-    // Buscar membro existente em qualquer formato
-    const { data: membro, error } = await supabase
-        .from('membros')
-        .select('*, grupos!membros_grupo_id_fkey(*)')
+    // 1. Buscar usuário na tabela usuarios
+    const { data: usuario } = await supabase
+        .from('usuarios')
+        .select('id, telefone')
         .in('telefone', telefonesParaBuscar)
         .limit(1)
         .single();
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 = not found
+    if (!usuario) {
+        // Fallback: buscar diretamente em membros (compatibilidade)
+        const { data: membro, error } = await supabase
+            .from('membros')
+            .select('*, grupos!membros_grupo_id_fkey(*)')
+            .in('telefone', telefonesParaBuscar)
+            .limit(1)
+            .single();
+
+        if (error && error.code !== 'PGRST116') {
+            console.log(`❌ Erro ao buscar membro: ${error.message}`);
+        }
+
+        if (membro) {
+            console.log(`✅ Membro encontrado (fallback): ${membro.nome}`);
+            if (!membro.whatsapp_id && whatsappId) {
+                await supabase.from('membros').update({ whatsapp_id: whatsappId }).eq('id', membro.id);
+            }
+            return membro;
+        }
+
+        console.log(`⚠️ Membro não encontrado para telefone: "${telefone}"`);
+        return null;
+    }
+
+    // 2. Buscar membro pelo usuario_id
+    const { data: membro, error } = await supabase
+        .from('membros')
+        .select('*, grupos!membros_grupo_id_fkey(*)')
+        .eq('usuario_id', usuario.id)
+        .eq('ativo', true)
+        .limit(1)
+        .single();
+
+    if (error && error.code !== 'PGRST116') {
         console.log(`❌ Erro ao buscar membro: ${error.message}`);
     }
 
     if (membro) {
         console.log(`✅ Membro encontrado: ${membro.nome} (grupo: ${membro.grupos?.nome || 'sem grupo'})`);
-        // Atualizar whatsapp_id se necessário
         if (!membro.whatsapp_id && whatsappId) {
-            await supabase
-                .from('membros')
-                .update({ whatsapp_id: whatsappId })
-                .eq('id', membro.id);
+            await supabase.from('membros').update({ whatsapp_id: whatsappId }).eq('id', membro.id);
         }
         return membro;
     }
 
-    console.log(`⚠️ Membro não encontrado para telefone: "${telefone}"`);
+    console.log(`⚠️ Usuário encontrado mas sem grupo: ${usuario.telefone}`);
     return null;
 }
 
@@ -539,6 +570,7 @@ export async function registrarPagamento(grupoId, membroId, valor, descricao = '
 
 /**
  * Auto-onboarding: cria membro automaticamente quando entra no grupo WhatsApp
+ * Agora cria `usuarios` primeiro (se não existe), depois `membros` com `usuario_id`
  * @param {string} telefone - Telefone do novo membro
  * @param {string} grupoWhatsappId - JID do grupo WhatsApp
  * @param {string} senhaDescartavel - Senha gerada para acesso ao dashboard
@@ -557,10 +589,10 @@ export async function autoOnboardMembro(telefone, grupoWhatsappId, senhaDescarta
         return null;
     }
 
-    // Verificar se é o motorista (já cadastrado)
+    // Verificar se é o motorista (motorista_id agora referencia usuarios.id)
     if (grupo.motorista_id) {
         const { data: motorista } = await supabase
-            .from('membros')
+            .from('usuarios')
             .select('telefone')
             .eq('id', grupo.motorista_id)
             .single();
@@ -577,13 +609,43 @@ export async function autoOnboardMembro(telefone, grupoWhatsappId, senhaDescarta
         }
     }
 
-    // Verificar se já existe um membro com esse telefone neste grupo
     const telefonesParaBuscar = getPhoneLookupFormats(telefone);
+
+    // 1. Buscar ou criar usuario
+    let { data: usuario } = await supabase
+        .from('usuarios')
+        .select('id, nome')
+        .in('telefone', telefonesParaBuscar)
+        .limit(1)
+        .single();
+
+    if (!usuario) {
+        // Criar usuario com dados mínimos
+        const { data: novoUsuario, error: userError } = await supabase
+            .from('usuarios')
+            .insert({
+                nome: `Membro ${telefone.slice(-4)}`,
+                telefone,
+                senha_hash: senhaDescartavel,
+                matricula: '',
+                matricula_status: 'pendente'
+            })
+            .select()
+            .single();
+
+        if (userError) {
+            console.error(`❌ Erro ao criar usuario auto-onboarding: ${userError.message}`);
+            return null;
+        }
+        usuario = novoUsuario;
+    }
+
+    // 2. Verificar se já existe membro neste grupo
     const { data: membroExistente } = await supabase
         .from('membros')
         .select('id')
         .eq('grupo_id', grupo.id)
-        .in('telefone', telefonesParaBuscar)
+        .eq('usuario_id', usuario.id)
         .limit(1)
         .single();
 
@@ -592,17 +654,18 @@ export async function autoOnboardMembro(telefone, grupoWhatsappId, senhaDescarta
         return null;
     }
 
-    // Criar novo membro
+    // 3. Criar membro vinculado ao usuario
     const { data: novoMembro, error } = await supabase
         .from('membros')
         .insert({
             grupo_id: grupo.id,
-            nome: `Membro ${telefone.slice(-4)}`, // Nome temporário
+            usuario_id: usuario.id,
+            nome: usuario.nome,
             telefone,
             is_motorista: false,
             ativo: true,
             dias_padrao: [],
-            senha_hash: senhaDescartavel
+            status_aprovacao: 'aprovado' // Auto-onboarding via WhatsApp = auto-approved
         })
         .select()
         .single();

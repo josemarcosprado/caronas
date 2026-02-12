@@ -1,8 +1,13 @@
 import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
+/**
+ * Componente de Login
+ * Autentica contra a tabela `usuarios` (não `membros`)
+ * Após login, carrega memberships separadamente
+ */
 export default function Login() {
     const [telefone, setTelefone] = useState('');
     const [senha, setSenha] = useState('');
@@ -23,128 +28,60 @@ export default function Login() {
 
             // Gerar variantes do telefone para busca flexível
             const variantes = [telefoneNormalizado];
-
-            // Se NÃO começa com 55, adicionar variante com 55
             if (!telefoneNormalizado.startsWith('55')) {
                 variantes.push('55' + telefoneNormalizado);
             }
-            // Se começa com 55, adicionar variante sem 55
             if (telefoneNormalizado.startsWith('55') && telefoneNormalizado.length > 2) {
                 variantes.push(telefoneNormalizado.substring(2));
             }
 
-            console.log('Tentando login com variantes:', variantes);
-
-            // Buscar membro com qualquer uma das variantes do telefone
-            // Passo 1: Buscar membros
-            const { data: todos, error: todosError } = await supabase
-                .from('membros')
+            // 1. Buscar usuário na tabela `usuarios`
+            const { data: usuario, error: userError } = await supabase
+                .from('usuarios')
                 .select('*')
-                .in('telefone', variantes);
+                .in('telefone', variantes)
+                .limit(1)
+                .single();
 
-            console.log('Resultado busca por telefone:', { todos, todosError });
-
-            if (todosError) {
-                console.error('Erro na query:', todosError);
-                throw new Error('Erro ao acessar o banco de dados.');
+            if (userError || !usuario) {
+                throw new Error('Telefone não encontrado. Verifique se digitou corretamente ou cadastre-se.');
             }
 
-            if (!todos || todos.length === 0) {
-                throw new Error('Telefone não encontrado. Verifique se digitou corretamente.');
+            // 2. Verificar senha
+            if (usuario.senha_hash !== senha) {
+                throw new Error('Senha incorreta.');
             }
 
-            // Passo 2: Buscar grupos desses membros
-            // Coletar IDs de grupos únicos (filtrando nulos)
-            const grupoIds = [...new Set(todos.map(m => m.grupo_id).filter(id => id))];
+            // 3. Carregar memberships (grupos do usuário)
+            const { data: memberships } = await supabase
+                .from('membros')
+                .select('*, grupos(*)')
+                .eq('usuario_id', usuario.id)
+                .eq('ativo', true);
 
-            let gruposData = [];
+            // 4. Fazer login via contexto
+            login(usuario, memberships || []);
 
-            if (grupoIds.length > 0) {
-                const { data, error } = await supabase
-                    .from('grupos')
-                    .select('*')
-                    .in('id', grupoIds);
-
-                if (error) {
-                    console.error('Erro ao buscar grupos:', error);
-                    throw new Error('Erro ao carregar dados dos grupos.');
-                }
-                gruposData = data || [];
-            }
-
-            // Anexar dados do grupo a cada membro
-            const memberships = todos.map(membro => {
-                const grupo = gruposData.find(g => g.id === membro.grupo_id);
-                // Se não achou grupo (ou é null), grupo será undefined
-                return { ...membro, grupos: grupo };
-            });
-
-            // Filtrar apenas membros ativos/pendentes (ignorar rejeitados se quiser, mas aqui vamos tratar depois)
-            // memberships já foi declarado acima com o map
-            // const memberships = todos; // REMOVIDO
-
-            // Selecionar o membro principal para logar (preferência por motorista, ou o primeiro)
-            // Se houver múltiplos, idealmente o usuário escolheria, mas por enquanto vamos logar no primeiro
-            // e permitir troca depois.
-            // Regra: Se tiver um motorista, entra como motorista.
-            let membroSelecionado = memberships.find(m => m.is_motorista) || memberships[0];
-
-            // Verificar senha APENAS se estiver entrando como motorista
-            if (membroSelecionado.is_motorista) {
-                if (membroSelecionado.senha_hash !== senha) {
-                    throw new Error('Senha incorreta.');
-                }
-            } else {
-                // Para passageiros, talvez pedir senha se tiver? Ou fluxo sem senha por enquanto?
-                // O código original pedia senha para LOGIN.
-                // Se o passageiro não tem senha, como ele loga? 
-                // O schema diz: senha_hash VARCHAR(255), -- Apenas para motoristas (admin)
-                // Então passageiro não tem senha. Login por telefone apenas? 
-                // Isso é inseguro. Vamos assumir que por enquanto é só telefone para passageiro
-                // ou verificar se existe algum fluxo de auth real. 
-                // O MVP parece confiar no telefone/localstorage.
-
-                // TODO: Implementar OTP ou senha para passageiro. Por enquanto, login aberto (conforme app de teste).
-                // Mas se o usuário digitou senha, vamos ignorar para passageiro?
-                // Vamos manter simples: Passageiro entra sem senha (apenas telefone).
-            }
-
-            // Se o selecionado estiver pendente/rejeitado, tentar achar um aprovado
-            if (membroSelecionado.status_aprovacao !== 'aprovado' && memberships.length > 1) {
+            // 5. Redirecionar
+            const redirectTo = location.state?.from?.pathname;
+            if (redirectTo) {
+                navigate(redirectTo);
+            } else if (memberships && memberships.length > 0) {
+                // Tem grupo — ir pro dashboard do primeiro grupo aprovado
                 const aprovado = memberships.find(m => m.status_aprovacao === 'aprovado');
-                if (aprovado) membroSelecionado = aprovado;
-            }
-
-            // Motoristas pendentes podem logar (verão warning no Dashboard)
-            // Passageiros pendentes são bloqueados
-            if (membroSelecionado.status_aprovacao === 'pendente' && !membroSelecionado.is_motorista) {
-                throw new Error('Sua solicitação para participar deste grupo ainda está aguardando aprovação do motorista.');
-            }
-            if (membroSelecionado.status_aprovacao === 'rejeitado') {
-                if (membroSelecionado.is_motorista) {
-                    throw new Error('Sua solicitação de cadastro como motorista foi rejeitada pelo administrador do sistema.');
+                if (aprovado) {
+                    const path = aprovado.is_motorista
+                        ? `/admin/${aprovado.grupo_id}`
+                        : `/g/${aprovado.grupo_id}`;
+                    navigate(path);
+                } else {
+                    // Só tem pendentes — ir pra lista de grupos
+                    navigate('/grupos');
                 }
-                throw new Error('Sua solicitação de entrada neste grupo foi rejeitada.');
-            }
-
-            // Salvar sessão via contexto (passando todos os memberships)
-            login(membroSelecionado, membroSelecionado.is_motorista ? 'motorista' : 'passageiro', memberships);
-
-            // Redirecionar
-            let targetPath = '/';
-
-            if (!membroSelecionado.grupo_id) {
-                // Se não tem grupo, vai para listagem
-                targetPath = '/grupos';
-            } else if (membroSelecionado.is_motorista) {
-                targetPath = `/admin/${membroSelecionado.grupo_id}`;
             } else {
-                targetPath = `/g/${membroSelecionado.grupo_id}`;
+                // Sem grupo — ir pra lista de grupos
+                navigate('/grupos');
             }
-
-            const from = location.state?.from?.pathname || targetPath;
-            console.log('Redirecionando para:', from);
-            navigate(from);
 
         } catch (err) {
             setError(err.message || 'Erro ao fazer login.');
@@ -160,7 +97,7 @@ export default function Login() {
                     🚗 Cajurona
                     <br />
                     <span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--text-secondary)' }}>
-                        Área do Motorista
+                        Entrar na sua conta
                     </span>
                 </h1>
 
@@ -224,9 +161,9 @@ export default function Login() {
                     textAlign: 'center'
                 }}>
                     Não tem uma conta?{' '}
-                    <a href="/criar" style={{ color: 'var(--accent-primary)' }}>
-                        Criar novo grupo
-                    </a>
+                    <Link to="/cadastro" style={{ color: 'var(--accent-primary)' }}>
+                        Cadastre-se
+                    </Link>
                 </p>
             </div>
         </div>

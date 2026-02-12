@@ -324,8 +324,8 @@ export default function Dashboard({ isAdmin = false }) {
                 )}
             </header>
 
-            {/* Warning banner para motorista pendente de aprovação */}
-            {user && user.is_motorista && user.status_aprovacao === 'pendente' && (
+            {/* Warning banner para verificação pendente (CNH ou matrícula) */}
+            {user && (user.cnhStatus === 'pendente' || user.matriculaStatus === 'pendente') && (
                 <div style={{
                     background: 'var(--warning-bg, #fff3cd)',
                     color: 'var(--warning, #856404)',
@@ -340,7 +340,14 @@ export default function Dashboard({ isAdmin = false }) {
                 }}>
                     <span style={{ fontSize: '1.2rem' }}>⚠️</span>
                     <div>
-                        <strong>Verificação pendente</strong> — Sua CNH e matrícula ainda estão sendo verificadas pelo administrador do sistema. Você pode usar o painel normalmente enquanto isso.
+                        <strong>Verificação pendente</strong> —{' '}
+                        {user.cnhStatus === 'pendente' && user.matriculaStatus === 'pendente'
+                            ? 'Sua CNH e matrícula ainda estão sendo verificadas pelo administrador do sistema.'
+                            : user.cnhStatus === 'pendente'
+                                ? 'Sua CNH ainda está sendo verificada pelo administrador do sistema.'
+                                : 'Sua matrícula ainda está sendo verificada pelo administrador do sistema.'
+                        }
+                        {' '}Você pode usar o painel normalmente enquanto isso.
                     </div>
                 </div>
             )}
@@ -674,11 +681,11 @@ export default function Dashboard({ isAdmin = false }) {
                             <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem' }}>
                                 ⚠️ Solicitações Pendentes
                             </h3>
-                            {membros.filter(m => m.status_aprovacao === 'pendente').length === 0 ? (
+                            {pendentes.length === 0 ? (
                                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Nenhuma solicitação pendente.</p>
                             ) : (
                                 <div style={{ display: 'grid', gap: '1rem' }}>
-                                    {membros.filter(m => m.status_aprovacao === 'pendente').map(membro => (
+                                    {pendentes.map(membro => (
                                         <div key={membro.id} style={{
                                             display: 'flex',
                                             justifyContent: 'space-between',

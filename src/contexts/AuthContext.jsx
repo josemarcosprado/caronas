@@ -1,6 +1,7 @@
 /**
  * Contexto de Autenticação
  * Gerencia estado global do usuário e persistência de sessão
+ * Sessão agora baseada em `usuarios` (identidade) + `membros` (participações)
  */
 
 import { createContext, useContext, useState, useEffect } from 'react';
@@ -33,22 +34,32 @@ export function AuthProvider({ children }) {
 
     /**
      * Fazer login
-     * @param {Object} userData - Dados do usuário (membro)
-     * @param {'motorista' | 'passageiro'} role - Role do usuário
-     * @param {Array} allMemberships - Lista de todos os registros de mebro deste usuário (opcional)
+     * @param {Object} usuario - Dados do usuário (tabela `usuarios`)
+     * @param {Array} memberships - Lista de registros de `membros` com dados de `grupos`
      */
-    const login = (userData, role, allMemberships = []) => {
-        // Se não vier memberships explícitos, assumimos o atual como único inicial
-        const memberships = allMemberships.length > 0 ? allMemberships : [userData];
+    const login = (usuario, memberships = []) => {
+        // Encontrar grupo ativo (preferir aprovado, depois qualquer um)
+        const aprovados = memberships.filter(m => m.status_aprovacao === 'aprovado');
+        const activeMembership = aprovados[0] || memberships[0] || null;
 
         const session = {
-            id: userData.id,
-            nome: userData.nome,
-            telefone: userData.telefone,
-            grupoId: userData.grupo_id, // Grupo ativo
-            role: role,
-            isMotorista: role === 'motorista',
-            memberships: memberships // Todos os grupos
+            // Dados do usuário (identidade)
+            id: usuario.id,
+            nome: usuario.nome,
+            telefone: usuario.telefone,
+            matricula: usuario.matricula,
+            matriculaStatus: usuario.matricula_status,
+            cnhUrl: usuario.cnh_url,
+            cnhStatus: usuario.cnh_status,
+            podeSerMotorista: usuario.pode_ser_motorista,
+            // Grupo ativo (se tiver)
+            grupoId: activeMembership?.grupo_id || null,
+            membroId: activeMembership?.id || null,
+            role: activeMembership?.is_motorista ? 'motorista' : 'passageiro',
+            isMotorista: activeMembership?.is_motorista || false,
+            statusAprovacao: activeMembership?.status_aprovacao || null,
+            // Todos os grupos
+            memberships: memberships
         };
 
         setUser(session);
@@ -57,7 +68,7 @@ export function AuthProvider({ children }) {
 
     /**
      * Trocar de grupo ativo
-     * @param {string} targetGroupId 
+     * @param {string} targetGroupId
      */
     const switchGroup = async (targetGroupId) => {
         if (!user || !user.memberships) return false;
@@ -69,14 +80,13 @@ export function AuthProvider({ children }) {
             return false;
         }
 
-        // Atualizar sessão com todos os dados do novo contexto
         const newSession = {
             ...user,
-            id: targetMembership.id, // ID do membro pode mudar por grupo
             grupoId: targetMembership.grupo_id,
+            membroId: targetMembership.id,
             role: targetMembership.is_motorista ? 'motorista' : 'passageiro',
             isMotorista: targetMembership.is_motorista,
-            // Mantemos nome/telefone/memberships globais
+            statusAprovacao: targetMembership.status_aprovacao,
         };
 
         setUser(newSession);
@@ -85,42 +95,52 @@ export function AuthProvider({ children }) {
     };
 
     /**
-     * Atualizar dados da sessão (ex: após aceitar convite)
+     * Atualizar dados da sessão (ex: após entrar num grupo)
      */
     const refreshSession = async () => {
         if (!user) return;
 
         try {
-            // Recarregar memberships (Passo 1: buscar membros)
-            const { data: membrosData, error: membrosError } = await supabase
-                .from('membros')
+            // 1. Recarregar dados do usuário
+            const { data: usuario, error: userError } = await supabase
+                .from('usuarios')
                 .select('*')
-                .eq('telefone', user.telefone);
+                .eq('id', user.id)
+                .single();
 
-            if (membrosError || !membrosData) return;
+            if (userError || !usuario) return;
 
-            // Passo 2: Buscar grupos
-            const grupoIds = [...new Set(membrosData.map(m => m.grupo_id).filter(id => id))];
-            let gruposData = [];
+            // 2. Recarregar memberships
+            const { data: memberships } = await supabase
+                .from('membros')
+                .select('*, grupos(*)')
+                .eq('usuario_id', user.id)
+                .eq('ativo', true);
 
-            if (grupoIds.length > 0) {
-                const { data: gData } = await supabase
-                    .from('grupos')
-                    .select('*')
-                    .in('id', grupoIds);
-                gruposData = gData || [];
-            }
+            // 3. Rebuild session mantendo grupo ativo se possível
+            const currentMembership = (memberships || []).find(m => m.grupo_id === user.grupoId);
+            const aprovados = (memberships || []).filter(m => m.status_aprovacao === 'aprovado');
+            const activeMembership = currentMembership || aprovados[0] || (memberships || [])[0] || null;
 
-            // Combinar dados
-            const memberships = membrosData.map(m => {
-                const g = gruposData.find(grp => grp.id === m.grupo_id);
-                return { ...m, grupos: g };
-            });
+            const session = {
+                id: usuario.id,
+                nome: usuario.nome,
+                telefone: usuario.telefone,
+                matricula: usuario.matricula,
+                matriculaStatus: usuario.matricula_status,
+                cnhUrl: usuario.cnh_url,
+                cnhStatus: usuario.cnh_status,
+                podeSerMotorista: usuario.pode_ser_motorista,
+                grupoId: activeMembership?.grupo_id || null,
+                membroId: activeMembership?.id || null,
+                role: activeMembership?.is_motorista ? 'motorista' : 'passageiro',
+                isMotorista: activeMembership?.is_motorista || false,
+                statusAprovacao: activeMembership?.status_aprovacao || null,
+                memberships: memberships || []
+            };
 
-            // Encontrar o membro ativo atual para atualizar dados
-            const currentMem = memberships.find(m => m.grupo_id === user.grupoId) || memberships[0];
-
-            login(currentMem, currentMem.is_motorista ? 'motorista' : 'passageiro', memberships);
+            setUser(session);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
         } catch (e) {
             console.error('Erro ao atualizar sessão:', e);
         }
@@ -143,12 +163,11 @@ export function AuthProvider({ children }) {
 
     /**
      * Verificar se tem role específico
-     * @param {'motorista' | 'passageiro'} requiredRole 
+     * @param {'motorista' | 'passageiro'} requiredRole
      */
     const hasRole = (requiredRole) => {
         if (!user) return false;
         if (requiredRole === 'motorista') return user.role === 'motorista';
-        // Passageiro pode acessar tudo que não requer motorista
         return true;
     };
 
