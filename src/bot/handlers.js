@@ -536,3 +536,82 @@ export async function registrarPagamento(grupoId, membroId, valor, descricao = '
 
     return resposta;
 }
+
+/**
+ * Auto-onboarding: cria membro automaticamente quando entra no grupo WhatsApp
+ * @param {string} telefone - Telefone do novo membro
+ * @param {string} grupoWhatsappId - JID do grupo WhatsApp
+ * @param {string} senhaDescartavel - Senha gerada para acesso ao dashboard
+ * @returns {Promise<import('../lib/database.types.js').Membro|null>}
+ */
+export async function autoOnboardMembro(telefone, grupoWhatsappId, senhaDescartavel) {
+    // Buscar grupo pelo whatsapp_group_id
+    const { data: grupo } = await supabase
+        .from('grupos')
+        .select('id, motorista_id')
+        .eq('whatsapp_group_id', grupoWhatsappId)
+        .single();
+
+    if (!grupo) {
+        console.log(`⚠️ Grupo não encontrado para auto-onboarding: ${grupoWhatsappId}`);
+        return null;
+    }
+
+    // Verificar se é o motorista (já cadastrado)
+    if (grupo.motorista_id) {
+        const { data: motorista } = await supabase
+            .from('membros')
+            .select('telefone')
+            .eq('id', grupo.motorista_id)
+            .single();
+
+        if (motorista?.telefone) {
+            const motorFormats = getPhoneLookupFormats(motorista.telefone);
+            const newFormats = getPhoneLookupFormats(telefone);
+            const isMotorista = motorFormats.some(f => newFormats.includes(f));
+
+            if (isMotorista) {
+                console.log(`🚗 Telefone ${telefone} é do motorista, ignorando auto-onboarding`);
+                return null;
+            }
+        }
+    }
+
+    // Verificar se já existe um membro com esse telefone neste grupo
+    const telefonesParaBuscar = getPhoneLookupFormats(telefone);
+    const { data: membroExistente } = await supabase
+        .from('membros')
+        .select('id')
+        .eq('grupo_id', grupo.id)
+        .in('telefone', telefonesParaBuscar)
+        .limit(1)
+        .single();
+
+    if (membroExistente) {
+        console.log(`👤 Membro já existe neste grupo: ${telefone}`);
+        return null;
+    }
+
+    // Criar novo membro
+    const { data: novoMembro, error } = await supabase
+        .from('membros')
+        .insert({
+            grupo_id: grupo.id,
+            nome: `Membro ${telefone.slice(-4)}`, // Nome temporário
+            telefone,
+            is_motorista: false,
+            ativo: true,
+            dias_padrao: [],
+            senha_hash: senhaDescartavel
+        })
+        .select()
+        .single();
+
+    if (error) {
+        console.error(`❌ Erro ao criar membro auto-onboarding: ${error.message}`);
+        return null;
+    }
+
+    console.log(`✨ Membro auto-cadastrado: ${novoMembro.nome} (${telefone})`);
+    return novoMembro;
+}

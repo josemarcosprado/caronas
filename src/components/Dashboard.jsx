@@ -32,6 +32,8 @@ export default function Dashboard({ isAdmin = false }) {
     }, [setSearchParams]);
     const [editando, setEditando] = useState(false);
     const [formConfig, setFormConfig] = useState({});
+    const [inviteLink, setInviteLink] = useState(null);
+    const [inviteLinkLoading, setInviteLinkLoading] = useState(false);
 
     // Carregar dados
     const loadData = useCallback(async () => {
@@ -116,6 +118,28 @@ export default function Dashboard({ isAdmin = false }) {
     useEffect(() => {
         loadData();
     }, [loadData]);
+
+    // Carregar invite link atualizado do bot
+    useEffect(() => {
+        if (!grupoId || !grupo?.whatsapp_group_id) return;
+
+        const fetchInviteLink = async () => {
+            setInviteLinkLoading(true);
+            try {
+                const response = await fetch(`/api/invite-link/${grupoId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setInviteLink(data.inviteLink);
+                }
+            } catch (err) {
+                console.warn('Não foi possível buscar invite link:', err.message);
+            } finally {
+                setInviteLinkLoading(false);
+            }
+        };
+
+        fetchInviteLink();
+    }, [grupoId, grupo?.whatsapp_group_id]);
 
     // Salvar configurações (apenas motoristas)
     const salvarConfig = async () => {
@@ -496,6 +520,49 @@ export default function Dashboard({ isAdmin = false }) {
                             )}
                         </div>
                     </div>
+
+                    {/* WhatsApp Invite Link */}
+                    {grupo.whatsapp_group_id && (
+                        <div className="day-detail" style={{ marginBottom: 'var(--space-4)' }}>
+                            <h3 style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-lg)' }}>
+                                📱 Grupo WhatsApp
+                            </h3>
+                            {inviteLinkLoading ? (
+                                <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>Carregando link...</p>
+                            ) : inviteLink ? (
+                                <div>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-2)' }}>
+                                        Compartilhe o link abaixo para novos membros entrarem no grupo:
+                                    </p>
+                                    <div style={{
+                                        background: 'var(--bg-secondary)',
+                                        padding: 'var(--space-2) var(--space-3)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        wordBreak: 'break-all',
+                                        fontSize: 'var(--font-size-xs)',
+                                        marginBottom: 'var(--space-2)',
+                                        color: 'var(--text-secondary)'
+                                    }}>
+                                        {inviteLink}
+                                    </div>
+                                    <button
+                                        className="btn btn-primary"
+                                        style={{ width: '100%' }}
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(inviteLink);
+                                            alert('Link de convite copiado!');
+                                        }}
+                                    >
+                                        📋 Copiar Link de Convite WhatsApp
+                                    </button>
+                                </div>
+                            ) : (
+                                <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>
+                                    Link de convite não disponível no momento.
+                                </p>
+                            )}
+                        </div>
+                    )}
 
                     {/* Bot Info - apenas para motoristas */}
                     {canEdit && (

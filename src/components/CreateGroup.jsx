@@ -192,11 +192,31 @@ function CreateGroup() {
             // 5. Criar viagens da semana
             await criarViagensSemana(grupo.id, formData.horarioIda, formData.horarioVolta);
 
-            // 6. NÃO fazer login automático — conta pendente de aprovação
+            // 6. Criar grupo no WhatsApp via bot API
+            let inviteLink = null;
+            try {
+                const botResponse = await fetch('/api/create-whatsapp-group', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ grupoId: grupo.id })
+                });
+
+                if (botResponse.ok) {
+                    const botData = await botResponse.json();
+                    inviteLink = botData.inviteLink;
+                } else {
+                    console.warn('Aviso: Não foi possível criar grupo no WhatsApp automaticamente.');
+                }
+            } catch (botErr) {
+                console.warn('Aviso: Bot não disponível para criar grupo WhatsApp:', botErr.message);
+            }
+
+            // 7. NÃO fazer login automático — conta pendente de aprovação
             setGrupoCriado({
                 id: grupo.id,
                 nome: grupo.nome,
-                pendente: true
+                pendente: true,
+                inviteLink
             });
 
         } catch (err) {
@@ -246,8 +266,10 @@ function CreateGroup() {
     };
 
     const copiarLink = () => {
-        navigator.clipboard.writeText(grupoCriado.link);
-        alert('Link copiado!');
+        if (grupoCriado?.inviteLink) {
+            navigator.clipboard.writeText(grupoCriado.inviteLink);
+            alert('Link copiado!');
+        }
     };
 
     const isPorTrajeto = formData.modeloPrecificacao === 'por_trajeto';
@@ -257,13 +279,62 @@ function CreateGroup() {
         return (
             <div className="login-container">
                 <div className="login-card" style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>⏳</div>
+                    <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>✅</div>
                     <h1 style={{ fontSize: 'var(--font-size-2xl)', marginBottom: 'var(--space-2)' }}>
                         Grupo Criado!
                     </h1>
                     <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
                         <strong>{grupoCriado.nome}</strong> foi criado com sucesso.
                     </p>
+
+                    {grupoCriado.inviteLink && (
+                        <div style={{
+                            background: 'var(--success-bg, #d1fae5)',
+                            color: 'var(--success, #065f46)',
+                            padding: 'var(--space-4)',
+                            borderRadius: 'var(--radius-md)',
+                            marginBottom: 'var(--space-4)',
+                            fontSize: 'var(--font-size-sm)'
+                        }}>
+                            <strong>📱 Grupo WhatsApp criado!</strong>
+                            <p style={{ marginTop: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                                Compartilhe o link abaixo com os membros:
+                            </p>
+                            <div style={{
+                                background: 'rgba(0,0,0,0.05)',
+                                padding: 'var(--space-2) var(--space-3)',
+                                borderRadius: 'var(--radius-sm)',
+                                wordBreak: 'break-all',
+                                fontSize: 'var(--font-size-xs)',
+                                marginBottom: 'var(--space-2)'
+                            }}>
+                                {grupoCriado.inviteLink}
+                            </div>
+                            <button
+                                className="btn btn-primary"
+                                onClick={copiarLink}
+                                style={{ width: '100%' }}
+                            >
+                                📋 Copiar Link de Convite
+                            </button>
+                        </div>
+                    )}
+
+                    {!grupoCriado.inviteLink && (
+                        <div style={{
+                            background: 'var(--info-bg, #dbeafe)',
+                            color: 'var(--info, #1e40af)',
+                            padding: 'var(--space-4)',
+                            borderRadius: 'var(--radius-md)',
+                            marginBottom: 'var(--space-4)',
+                            fontSize: 'var(--font-size-sm)'
+                        }}>
+                            <strong>ℹ️ Grupo WhatsApp</strong>
+                            <p style={{ marginTop: 'var(--space-2)', marginBottom: 0 }}>
+                                O link de convite do WhatsApp estará disponível no painel após a aprovação.
+                            </p>
+                        </div>
+                    )}
 
                     <div style={{
                         background: 'var(--warning-bg, #fff3cd)',
