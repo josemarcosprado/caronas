@@ -306,25 +306,25 @@ function CreateGroup() {
                     )}
 
                     <div style={{
-                        background: 'var(--warning-bg, #fff3cd)',
-                        color: 'var(--warning, #856404)',
+                        background: 'var(--info-bg, #dbeafe)',
+                        color: 'var(--info, #1e40af)',
                         padding: 'var(--space-4)',
                         borderRadius: 'var(--radius-md)',
                         marginBottom: 'var(--space-4)',
                         fontSize: 'var(--font-size-sm)'
                     }}>
-                        <strong>📋 Aguardando aprovação</strong>
+                        <strong>📋 Verificação em andamento</strong>
                         <p style={{ marginTop: 'var(--space-2)', marginBottom: 0 }}>
-                            Sua CNH foi enviada para verificação. Você receberá acesso ao painel
-                            de administração assim que sua conta for aprovada.
+                            Sua CNH e matrícula foram enviadas para verificação. Você já pode
+                            acessar o painel e gerenciar seu grupo normalmente.
                         </p>
                     </div>
 
                     <button
-                        className="btn btn-secondary"
+                        className="btn btn-primary"
                         onClick={() => navigate('/')}
                     >
-                        🏠 Voltar ao Início
+                        🔑 Fazer Login
                     </button>
                 </div>
             </div>

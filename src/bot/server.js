@@ -23,7 +23,8 @@ import {
     criarGrupoWhatsApp,
     buscarInviteLink,
     buscarParticipantes,
-    renovarInviteLink
+    renovarInviteLink,
+    promoverParaAdmin
 } from './evolutionApi.js';
 import { supabase } from '../lib/supabase.js';
 import { getPhoneLookupFormats } from '../lib/phoneUtils.js';
@@ -571,6 +572,16 @@ app.post('/api/create-whatsapp-group', async (req, res) => {
             .eq('id', grupoId);
 
         console.log(`✅ Grupo WhatsApp criado: ${grupo.nome} (${groupJid})`);
+
+        // Promover motorista a admin do grupo WhatsApp
+        if (participantes.length > 0) {
+            try {
+                const motoristaJid = `${participantes[0]}@s.whatsapp.net`;
+                await promoverParaAdmin(groupJid, motoristaJid);
+            } catch (promoteErr) {
+                console.warn('⚠️ Não foi possível promover motorista a admin:', promoteErr.message);
+            }
+        }
 
         res.json({
             success: true,

@@ -115,10 +115,15 @@ export default function Login() {
                 if (aprovado) membroSelecionado = aprovado;
             }
 
-            if (membroSelecionado.status_aprovacao === 'pendente') {
+            // Motoristas pendentes podem logar (verão warning no Dashboard)
+            // Passageiros pendentes são bloqueados
+            if (membroSelecionado.status_aprovacao === 'pendente' && !membroSelecionado.is_motorista) {
                 throw new Error('Sua solicitação para participar deste grupo ainda está aguardando aprovação do motorista.');
             }
             if (membroSelecionado.status_aprovacao === 'rejeitado') {
+                if (membroSelecionado.is_motorista) {
+                    throw new Error('Sua solicitação de cadastro como motorista foi rejeitada pelo administrador do sistema.');
+                }
                 throw new Error('Sua solicitação de entrada neste grupo foi rejeitada.');
             }
 

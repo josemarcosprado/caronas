@@ -201,3 +201,28 @@ export async function renovarInviteLink(groupJid) {
         return await buscarInviteLink(groupJid);
     }
 }
+
+/**
+ * Promove um participante a administrador do grupo WhatsApp
+ * @param {string} groupJid - JID do grupo (ex: 123456789@g.us)
+ * @param {string} participantJid - JID do participante (ex: 5579999998888@s.whatsapp.net)
+ * @returns {Promise<object>}
+ */
+export async function promoverParaAdmin(groupJid, participantJid) {
+    try {
+        const result = await evolutionFetch('/group/updateParticipant', {
+            method: 'PUT',
+            body: JSON.stringify({
+                groupJid,
+                action: 'promote',
+                participants: [participantJid]
+            })
+        });
+
+        console.log(`👑 Participante promovido a admin: ${participantJid} em ${groupJid}`);
+        return result;
+    } catch (error) {
+        console.error('❌ Erro ao promover participante a admin:', error.message);
+        throw error;
+    }
+}

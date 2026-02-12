@@ -324,6 +324,27 @@ export default function Dashboard({ isAdmin = false }) {
                 )}
             </header>
 
+            {/* Warning banner para motorista pendente de aprovação */}
+            {user && user.is_motorista && user.status_aprovacao === 'pendente' && (
+                <div style={{
+                    background: 'var(--warning-bg, #fff3cd)',
+                    color: 'var(--warning, #856404)',
+                    padding: 'var(--space-3) var(--space-4)',
+                    borderRadius: 'var(--radius-md)',
+                    marginBottom: 'var(--space-4)',
+                    fontSize: 'var(--font-size-sm)',
+                    border: '1px solid var(--warning, #ffc107)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-2)'
+                }}>
+                    <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+                    <div>
+                        <strong>Verificação pendente</strong> — Sua CNH e matrícula ainda estão sendo verificadas pelo administrador do sistema. Você pode usar o painel normalmente enquanto isso.
+                    </div>
+                </div>
+            )}
+
             {/* Tabs */}
             <div style={{
                 display: 'flex',
