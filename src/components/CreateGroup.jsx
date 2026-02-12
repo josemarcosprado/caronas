@@ -16,8 +16,6 @@ function CreateGroup() {
     const [grupoCriado, setGrupoCriado] = useState(null);
     const [cnhFile, setCnhFile] = useState(null);
     const [cnhPreview, setCnhPreview] = useState(null);
-    const [carteirinhaFile, setCarteirinhaFile] = useState(null);
-    const [carteirinhaPreview, setCarteirinhaPreview] = useState(null);
     const [formData, setFormData] = useState({
         nome: '',
         horarioIda: '07:00',
@@ -28,7 +26,8 @@ function CreateGroup() {
         tempoLimiteCancelamento: '30',
         motoristaNome: '',
         motoristaTelefone: '',
-        motoristaSenha: ''
+        motoristaSenha: '',
+        matricula: ''
     });
 
     const handleCnhChange = (e) => {
@@ -48,22 +47,7 @@ function CreateGroup() {
         }
     };
 
-    const handleCarteirinhaChange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            if (file.size > 5 * 1024 * 1024) {
-                setError('A imagem da carteirinha deve ter no máximo 5MB.');
-                return;
-            }
-            if (!file.type.startsWith('image/')) {
-                setError('O arquivo deve ser uma imagem (JPG, PNG, etc).');
-                return;
-            }
-            setCarteirinhaFile(file);
-            setCarteirinhaPreview(URL.createObjectURL(file));
-            setError('');
-        }
-    };
+
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -97,9 +81,9 @@ function CreateGroup() {
             return;
         }
 
-        // Validate carteirinha
-        if (!carteirinhaFile) {
-            setError('É obrigatório enviar uma foto da carteirinha de estudante.');
+        // Validate matrícula
+        if (!formData.matricula || !formData.matricula.trim()) {
+            setError('É obrigatório informar o número de matrícula.');
             setLoading(false);
             return;
         }
@@ -144,22 +128,7 @@ function CreateGroup() {
 
             const cnhUrl = urlData.publicUrl;
 
-            // 3. Upload da Carteirinha
-            const cartFileName = `cart_${grupo.id}_${Date.now()}.${carteirinhaFile.name.split('.').pop()}`;
-            const { error: cartUploadError } = await supabase.storage
-                .from('carteirinha-uploads')
-                .upload(cartFileName, carteirinhaFile, {
-                    cacheControl: '3600',
-                    upsert: false
-                });
 
-            if (cartUploadError) throw new Error('Erro ao enviar carteirinha: ' + cartUploadError.message);
-
-            const { data: cartUrlData } = supabase.storage
-                .from('carteirinha-uploads')
-                .getPublicUrl(cartFileName);
-
-            const carteirinhaUrl = cartUrlData.publicUrl;
 
             // 4. Criar o motorista como primeiro membro (pendente de aprovação)
             const { data: membro, error: membroError } = await supabase
@@ -173,7 +142,7 @@ function CreateGroup() {
                     dias_padrao: ['seg', 'ter', 'qua', 'qui', 'sex'],
                     senha_hash: formData.motoristaSenha,
                     cnh_url: cnhUrl,
-                    carteirinha_url: carteirinhaUrl,
+                    matricula: formData.matricula.trim(),
                     status_aprovacao: 'pendente'
                 })
                 .select()
@@ -392,41 +361,21 @@ function CreateGroup() {
                         )}
                     </div>
 
-                    {/* Upload da Carteirinha */}
+                    {/* Número de Matrícula */}
                     <div className="form-group">
-                        <label className="form-label">Foto da Carteirinha de Estudante (obrigatório)</label>
+                        <label className="form-label">Número de Matrícula (obrigatório)</label>
                         <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleCarteirinhaChange}
-                            style={{
-                                width: '100%',
-                                padding: 'var(--space-2)',
-                                border: '1px solid var(--border-color)',
-                                borderRadius: 'var(--radius-md)',
-                                background: 'var(--bg-secondary)',
-                                color: 'var(--text-primary)',
-                                fontSize: 'var(--font-size-sm)'
-                            }}
+                            type="text"
+                            name="matricula"
+                            className="form-input"
+                            placeholder="Ex: 202100012345"
+                            value={formData.matricula}
+                            onChange={handleChange}
+                            required
                         />
                         <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
-                            Envie uma foto legível da sua carteirinha UFS (máx. 5MB)
+                            Digite o número de matrícula da sua instituição
                         </small>
-                        {carteirinhaPreview && (
-                            <div style={{ marginTop: 'var(--space-2)' }}>
-                                <img
-                                    src={carteirinhaPreview}
-                                    alt="Preview da carteirinha"
-                                    style={{
-                                        maxWidth: '100%',
-                                        maxHeight: '200px',
-                                        borderRadius: 'var(--radius-md)',
-                                        border: '1px solid var(--border-color)',
-                                        objectFit: 'contain'
-                                    }}
-                                />
-                            </div>
-                        )}
                     </div>
 
                     <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
