@@ -78,7 +78,7 @@ export default function LandingPage() {
                     <ul className={`lp-nav-links ${menuOpen ? 'open' : ''}`}>
                         <li><a href="#problema" onClick={() => setMenuOpen(false)}>Problema</a></li>
                         <li><a href="#pilares" onClick={() => setMenuOpen(false)}>Diferenciais</a></li>
-                        <li><a href="#como-funciona" onClick={() => setMenuOpen(false)}>Como Funciona</a></li>
+                        <li><a href="#como-funciona" onClick={() => setMenuOpen(false)}>Como Funciona?</a></li>
                         <li><a href="#faq" onClick={() => setMenuOpen(false)}>FAQ</a></li>
                         <li className="lp-mobile-cta">
                             <Link to="/login" className="lp-btn lp-btn-ghost" onClick={() => setMenuOpen(false)}>

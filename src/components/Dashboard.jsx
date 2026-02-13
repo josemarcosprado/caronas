@@ -9,7 +9,7 @@ import AvailableGroups from './AvailableGroups.jsx';
 export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
     const navigate = useNavigate();
-    const { user, logout, isMotorista } = useAuth();
+    const { user, logout, isMotorista, refreshSession } = useAuth();
 
     // Determinar se é admin: prop OU usuário logado como motorista
     const canEdit = isAdmin || isMotorista;
@@ -24,7 +24,7 @@ export default function Dashboard({ isAdmin = false }) {
     const [searchParams, setSearchParams] = useSearchParams();
     const activeTab = useMemo(() => {
         const tab = searchParams.get('tab');
-        const validTabs = ['inicio', 'viagens', 'membros', 'config', 'grupos'];
+        const validTabs = ['inicio', 'viagens', 'membros', 'config', 'grupos', 'perfil'];
         return validTabs.includes(tab) ? tab : 'inicio';
     }, [searchParams]);
     const changeTab = useCallback((tab) => {
@@ -34,6 +34,25 @@ export default function Dashboard({ isAdmin = false }) {
     const [formConfig, setFormConfig] = useState({});
     const [inviteLink, setInviteLink] = useState(null);
     const [inviteLinkLoading, setInviteLinkLoading] = useState(false);
+
+    // Estado para edição de perfil
+    const [perfilEdit, setPerfilEdit] = useState({
+        nome: user?.nome || '',
+        telefone: user?.telefone || '',
+        matricula: user?.matricula || ''
+    });
+    const [savingProfile, setSavingProfile] = useState(false);
+
+    // Atualizar estado de perfil quando user mudar
+    useEffect(() => {
+        if (user) {
+            setPerfilEdit({
+                nome: user.nome || '',
+                telefone: user.telefone || '',
+                matricula: user.matricula || ''
+            });
+        }
+    }, [user]);
 
     // Carregar dados
     const loadData = useCallback(async () => {
@@ -65,21 +84,25 @@ export default function Dashboard({ isAdmin = false }) {
             });
 
             // Buscar membros aprovados
-            const { data: membrosData } = await supabase
+            const { data: membrosData, error: membrosError } = await supabase
                 .from('membros')
-                .select('*')
+                .select('*, usuarios(nome, telefone, cnh_url)')
                 .eq('grupo_id', grupoId)
                 .eq('ativo', true)
                 .eq('status_aprovacao', 'aprovado')
                 .order('is_motorista', { ascending: false });
 
+            if (membrosError) {
+                console.error('Erro ao buscar membros:', membrosError);
+            }
+            console.log('Membros carregados:', membrosData);
             setMembros(membrosData || []);
 
             // Buscar membros pendentes de aprovação (apenas para motoristas)
             if (canEdit) {
                 const { data: pendentesData } = await supabase
                     .from('membros')
-                    .select('*')
+                    .select('*, usuarios(nome, telefone, cnh_url)')
                     .eq('grupo_id', grupoId)
                     .eq('status_aprovacao', 'pendente')
                     .order('created_at', { ascending: true });
@@ -207,6 +230,36 @@ export default function Dashboard({ isAdmin = false }) {
         navigate('/');
     };
 
+    // Salvar perfil do usuário
+    const handleSaveProfile = async (e) => {
+        e.preventDefault();
+        setSavingProfile(true);
+        try {
+            const { error } = await supabase
+                .from('usuarios')
+                .update({
+                    nome: perfilEdit.nome,
+                    telefone: perfilEdit.telefone,
+                    matricula: perfilEdit.matricula
+                })
+                .eq('id', user.id);
+
+            if (error) throw error;
+
+            // Recarregar sessão para atualizar dados no contexto
+            await refreshSession();
+
+
+
+            alert('Perfil atualizado com sucesso!');
+        } catch (err) {
+            console.error('Erro ao atualizar perfil:', err);
+            alert('Erro ao atualizar perfil: ' + err.message);
+        } finally {
+            setSavingProfile(false);
+        }
+    };
+
     // Aprovar ou rejeitar membro
     const handleApproveMember = async (membroId, novoStatus) => {
         try {
@@ -270,8 +323,8 @@ export default function Dashboard({ isAdmin = false }) {
 
     // Tabs disponíveis baseado no role
     const availableTabs = canEdit
-        ? ['inicio', 'viagens', 'membros', 'config', 'grupos']
-        : ['inicio', 'viagens', 'membros', 'grupos'];
+        ? ['inicio', 'viagens', 'membros', 'config', 'perfil', 'grupos']
+        : ['inicio', 'viagens', 'membros', 'perfil', 'grupos'];
 
     return (
         <div className="container">
@@ -379,6 +432,7 @@ export default function Dashboard({ isAdmin = false }) {
                         {tab === 'viagens' && '📅 Viagens'}
                         {tab === 'membros' && '👥 Membros'}
                         {tab === 'config' && '⚙️ Config'}
+                        {tab === 'perfil' && '👤 Meu Perfil'}
                         {tab === 'grupos' && '🔍 Grupos'}
                     </button>
                 ))}
@@ -409,7 +463,7 @@ export default function Dashboard({ isAdmin = false }) {
                                     }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-2)' }}>
                                             <div>
-                                                <strong>{membro.nome}</strong>
+                                                <strong>{membro.usuarios?.nome || 'Usuário'}</strong>
                                                 <span style={{
                                                     marginLeft: 'var(--space-2)',
                                                     padding: '2px 8px',
@@ -422,20 +476,20 @@ export default function Dashboard({ isAdmin = false }) {
                                                     {membro.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
                                                 </span>
                                                 <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', margin: 'var(--space-1) 0 0 0' }}>
-                                                    📱 {membro.telefone}
+                                                    📱 {membro.usuarios?.telefone || 'Telefone não disponível'}
                                                 </p>
                                             </div>
                                         </div>
 
                                         {/* Documentos */}
                                         <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
-                                            {membro.is_motorista && membro.cnh_url && (
+                                            {membro.is_motorista && membro.usuarios?.cnh_url && (
                                                 <div>
                                                     <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🪪 CNH:</p>
                                                     <img
-                                                        src={membro.cnh_url}
-                                                        alt={`CNH de ${membro.nome}`}
-                                                        onClick={() => setImagemExpandida(membro.cnh_url)}
+                                                        src={membro.usuarios.cnh_url}
+                                                        alt={`CNH de ${membro.usuarios?.nome || membro.nome}`}
+                                                        onClick={() => setImagemExpandida(membro.usuarios.cnh_url)}
                                                         style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
                                                     />
                                                 </div>
@@ -445,7 +499,7 @@ export default function Dashboard({ isAdmin = false }) {
                                                     <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🎓 Carteirinha:</p>
                                                     <img
                                                         src={membro.carteirinha_url}
-                                                        alt={`Carteirinha de ${membro.nome}`}
+                                                        alt={`Carteirinha de ${membro.usuarios?.nome || membro.nome}`}
                                                         onClick={() => setImagemExpandida(membro.carteirinha_url)}
                                                         style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
                                                     />
@@ -627,6 +681,69 @@ export default function Dashboard({ isAdmin = false }) {
                 </div>
             )}
 
+            {/* Tab: Perfil */}
+            {activeTab === 'perfil' && (
+                <div>
+                    <h3 style={{ marginBottom: 'var(--space-3)' }}>👤 Meu Perfil</h3>
+                    <div className="card">
+                        <form onSubmit={handleSaveProfile}>
+                            <div className="form-group">
+                                <label className="form-label">Nome Completo</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    value={perfilEdit.nome}
+                                    readOnly
+                                    style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', color: 'var(--text-muted)' }}
+                                />
+                                <small style={{ color: 'var(--text-muted)' }}>
+                                    O nome não pode ser alterado pelo painel.
+                                </small>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Telefone (WhatsApp)</label>
+                                <input
+                                    type="tel"
+                                    className="form-input"
+                                    value={perfilEdit.telefone}
+                                    onChange={e => setPerfilEdit({ ...perfilEdit, telefone: e.target.value })}
+                                    required
+                                />
+                                <small style={{ color: 'var(--text-muted)' }}>
+                                    Usado para contato e identificação no grupo do WhatsApp.
+                                </small>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Matrícula</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    value={perfilEdit.matricula}
+                                    onChange={e => setPerfilEdit({ ...perfilEdit, matricula: e.target.value })}
+                                    readOnly={!!user?.matricula}
+                                    style={user?.matricula ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', color: 'var(--text-muted)' } : {}}
+                                />
+                                {user?.matricula && (
+                                    <small style={{ color: 'var(--text-muted)' }}>
+                                        A matrícula só pode ser alterada se estiver vazia.
+                                    </small>
+                                )}
+                            </div>
+
+                            <button
+                                type="submit"
+                                className="btn btn-primary"
+                                disabled={savingProfile}
+                            >
+                                {savingProfile ? 'Salvando...' : '💾 Salvar Alterações'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* Tab: Viagens */}
             {activeTab === 'viagens' && (
                 <div>
@@ -709,8 +826,8 @@ export default function Dashboard({ isAdmin = false }) {
                                                     </div>
                                                 )}
                                                 <div>
-                                                    <strong>{membro.nome}</strong>
-                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.telefone)}</div>
+                                                    <strong>{membro.usuarios?.nome || membro.nome}</strong>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.usuarios?.telefone || membro.telefone)}</div>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -738,24 +855,38 @@ export default function Dashboard({ isAdmin = false }) {
                         </div>
                     )}
 
-                    <div className="member-list">
-                        {membros.map(membro => (
-                            <div key={membro.id} className="member-item">
-                                <div className={`member-avatar ${membro.is_motorista ? 'driver' : ''}`}>
-                                    {membro.nome?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
-                                </div>
-                                <div className="member-info">
-                                    <div className="member-name">{membro.nome}</div>
-                                    <div className="member-status">
-                                        📱 {membro.telefone}
+                    {membros.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="icon">👥</div>
+                            <p>Nenhum membro aprovado neste grupo ainda.</p>
+                        </div>
+                    ) : (
+                        <div className="member-list">
+                            {membros.map(membro => {
+                                const nome = membro.usuarios?.nome || membro.nome || 'Usuário';
+                                const telefone = membro.usuarios?.telefone || membro.telefone || '';
+                                const iniciais = nome.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                                return (
+                                    <div key={membro.id} className="member-item">
+                                        <div className={`member-avatar ${membro.is_motorista ? 'driver' : 'confirmed'}`}
+                                            style={!membro.is_motorista ? { background: 'var(--accent-primary)', color: 'white', opacity: 0.8 } : { background: 'var(--accent-secondary)', color: 'white' }}
+                                        >
+                                            {iniciais}
+                                        </div>
+                                        <div className="member-info">
+                                            <div className="member-name">{nome}</div>
+                                            <div className="member-status">
+                                                📱 {telefone || 'Não informado'}
+                                            </div>
+                                        </div>
+                                        {membro.is_motorista && (
+                                            <span className="member-badge driver">Motorista</span>
+                                        )}
                                     </div>
-                                </div>
-                                {membro.is_motorista && (
-                                    <span className="member-badge driver">Motorista</span>
-                                )}
-                            </div>
-                        ))}
-                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -976,4 +1107,3 @@ export default function Dashboard({ isAdmin = false }) {
         </div>
     );
 }
-
