@@ -9,11 +9,11 @@ import AvailableGroups from './AvailableGroups.jsx';
 export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
     const navigate = useNavigate();
-    const { user, logout, isMotorista, refreshSession, switchGroup } = useAuth();
+    const { user, logout, isMotorista, refreshSession, switchGroup, isSuperAdmin } = useAuth();
     const [showGroupSwitcher, setShowGroupSwitcher] = useState(false);
 
-    // Determinar se é admin: prop OU usuário logado como motorista
-    const canEdit = isAdmin || isMotorista;
+    // Determinar se é admin: prop OU usuário logado como motorista OU super admin
+    const canEdit = isAdmin || isMotorista || isSuperAdmin;
 
     const [grupo, setGrupo] = useState(null);
     const [membros, setMembros] = useState([]);
@@ -232,13 +232,15 @@ export default function Dashboard({ isAdmin = false }) {
         if (!confirm('ÚLTIMA CONFIRMAÇÃO: Excluir o grupo "' + grupo?.nome + '" permanentemente?')) return;
 
         try {
-            // Deletar membros do grupo primeiro (FK bloqueia delete do grupo)
+            // Deletar membros do grupo primeiro (safety, CASCADE should handle this too)
             const { error: membrosError } = await supabase
                 .from('membros')
                 .delete()
                 .eq('grupo_id', grupoId);
 
-            if (membrosError) throw membrosError;
+            if (membrosError) {
+                console.warn('Aviso ao deletar membros (CASCADE deve resolver):', membrosError.message);
+            }
 
             const { error } = await supabase
                 .from('grupos')
@@ -247,6 +249,7 @@ export default function Dashboard({ isAdmin = false }) {
 
             if (error) throw error;
 
+            alert('Grupo excluído com sucesso!');
             await refreshSession();
             navigate('/');
         } catch (err) {
