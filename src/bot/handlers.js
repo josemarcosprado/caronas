@@ -32,7 +32,27 @@ export async function getOrCreateMembro(telefone, whatsappId) {
         .single();
 
     if (!usuario) {
-        console.log(`⚠️ Usuário não encontrado para telefone: "${telefone}"`);
+        // Fallback: buscar diretamente em membros (compatibilidade)
+        const { data: membro, error } = await supabase
+            .from('membros')
+            .select('*, grupos!membros_grupo_id_fkey(*), usuarios!inner(nome, telefone, whatsapp_id)')
+            .in('usuarios.telefone', telefonesParaBuscar)
+            .limit(1)
+            .single();
+
+        if (error && error.code !== 'PGRST116') {
+            console.log(`❌ Erro ao buscar membro: ${error.message}`);
+        }
+
+        if (membro) {
+            console.log(`✅ Membro encontrado (fallback): ${membro.usuarios.nome}`);
+            if (!membro.usuarios.whatsapp_id && whatsappId) {
+                await supabase.from('usuarios').update({ whatsapp_id: whatsappId }).eq('id', membro.usuario_id);
+            }
+            return membro;
+        }
+
+        console.log(`⚠️ Membro não encontrado para telefone: "${telefone}"`);
         return null;
     }
 
@@ -45,7 +65,7 @@ export async function getOrCreateMembro(telefone, whatsappId) {
     // 2. Buscar membro pelo usuario_id
     const { data: membro, error } = await supabase
         .from('membros')
-        .select('*, grupos!membros_grupo_id_fkey(*)')
+        .select('*, grupos!membros_grupo_id_fkey(*), usuarios!inner(nome, telefone, whatsapp_id)')
         .eq('usuario_id', usuario.id)
         .eq('ativo', true)
         .limit(1)
@@ -56,16 +76,11 @@ export async function getOrCreateMembro(telefone, whatsappId) {
     }
 
     if (membro) {
-        // Achatar dados de identidade do usuario no resultado
-        const result = {
-            ...membro,
-            nome: usuario.nome,
-            telefone: usuario.telefone,
-            whatsapp_id: usuario.whatsapp_id,
-            usuario_id: usuario.id
-        };
-        console.log(`✅ Membro encontrado: ${result.nome} (grupo: ${membro.grupos?.nome || 'sem grupo'})`);
-        return result;
+        console.log(`✅ Membro encontrado: ${membro.usuarios?.nome || usuario.nome} (grupo: ${membro.grupos?.nome || 'sem grupo'})`);
+        if (!membro.usuarios?.whatsapp_id && whatsappId) {
+            await supabase.from('usuarios').update({ whatsapp_id: whatsappId }).eq('id', membro.usuario_id);
+        }
+        return membro;
     }
 
     console.log(`⚠️ Usuário encontrado mas sem grupo: ${usuario.telefone}`);
@@ -403,22 +418,33 @@ Peça ao motorista do seu grupo para te adicionar, ou entre em um grupo de caron
     const telefonesParaBuscar = getPhoneLookupFormats(telefone);
     let { data: usuario } = await supabase
         .from('usuarios')
-        .select('id')
+        .select('id, nome')
         .in('telefone', telefonesParaBuscar)
         .limit(1)
         .single();
 
     if (!usuario) {
+        // Criar usuário se não existe
         const { data: novoUsuario, error: userError } = await supabase
             .from('usuarios')
-            .insert({ nome, telefone, matricula: '', matricula_status: 'pendente' })
+            .insert({
+                nome,
+                telefone,
+                senha_hash: Math.random().toString(36).slice(-8), // Senha temp
+                matricula: '',
+                matricula_status: 'pendente'
+            })
             .select()
             .single();
-        if (userError) return '❌ Erro ao cadastrar. Tente novamente.';
+
+        if (userError) {
+            console.error('Erro ao criar usuario no onboarding:', userError);
+            return '❌ Erro ao cadastrar. Tente novamente.';
+        }
         usuario = novoUsuario;
     }
 
-    // Criar membro (vinculado ao usuario)
+    // Criar membro vinculado ao usuario
     const { error } = await supabase
         .from('membros')
         .insert({
@@ -673,6 +699,7 @@ export async function autoOnboardMembro(telefone, grupoWhatsappId, senhaDescarta
         .insert({
             grupo_id: grupo.id,
             usuario_id: usuario.id,
+
             is_motorista: false,
             ativo: true,
             dias_padrao: [],
@@ -686,6 +713,6 @@ export async function autoOnboardMembro(telefone, grupoWhatsappId, senhaDescarta
         return null;
     }
 
-    console.log(`✨ Membro auto-cadastrado: ${novoMembro.nome} (${telefone})`);
+    console.log(`✨ Membro auto-cadastrado: ${usuario.nome} (${telefone})`);
     return novoMembro;
 }

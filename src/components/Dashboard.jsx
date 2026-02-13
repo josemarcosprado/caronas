@@ -9,11 +9,11 @@ import AvailableGroups from './AvailableGroups.jsx';
 export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
     const navigate = useNavigate();
-    const { user, logout, isMotorista, refreshSession, switchGroup } = useAuth();
+    const { user, logout, isMotorista, refreshSession, switchGroup, isSuperAdmin } = useAuth();
     const [showGroupSwitcher, setShowGroupSwitcher] = useState(false);
 
-    // Determinar se é admin: prop OU usuário logado como motorista
-    const canEdit = isAdmin || isMotorista;
+    // Determinar se é admin: prop OU usuário logado como motorista OU super admin
+    const canEdit = isAdmin || isMotorista || isSuperAdmin;
 
     const [grupo, setGrupo] = useState(null);
     const [membros, setMembros] = useState([]);
@@ -70,6 +70,7 @@ export default function Dashboard({ isAdmin = false }) {
             const { data: membrosData } = await supabase
                 .from('membros')
                 .select('*, usuarios(nome, telefone, matricula, cnh_url)')
+
                 .eq('grupo_id', grupoId)
                 .eq('ativo', true)
                 .eq('status_aprovacao', 'aprovado')
@@ -90,6 +91,7 @@ export default function Dashboard({ isAdmin = false }) {
                 const { data: pendentesData } = await supabase
                     .from('membros')
                     .select('*, usuarios(nome, telefone, matricula, cnh_url)')
+
                     .eq('grupo_id', grupoId)
                     .eq('status_aprovacao', 'pendente')
                     .order('created_at', { ascending: true });
@@ -240,13 +242,15 @@ export default function Dashboard({ isAdmin = false }) {
         if (!confirm('ÚLTIMA CONFIRMAÇÃO: Excluir o grupo "' + grupo?.nome + '" permanentemente?')) return;
 
         try {
-            // Deletar membros do grupo primeiro (FK bloqueia delete do grupo)
+            // Deletar membros do grupo primeiro (safety, CASCADE should handle this too)
             const { error: membrosError } = await supabase
                 .from('membros')
                 .delete()
                 .eq('grupo_id', grupoId);
 
-            if (membrosError) throw membrosError;
+            if (membrosError) {
+                console.warn('Aviso ao deletar membros (CASCADE deve resolver):', membrosError.message);
+            }
 
             const { error } = await supabase
                 .from('grupos')
@@ -255,6 +259,7 @@ export default function Dashboard({ isAdmin = false }) {
 
             if (error) throw error;
 
+            alert('Grupo excluído com sucesso!');
             await refreshSession();
             navigate('/');
         } catch (err) {
@@ -640,7 +645,7 @@ export default function Dashboard({ isAdmin = false }) {
                                     }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-2)' }}>
                                             <div>
-                                                <strong>{membro.nome}</strong>
+                                                <strong>{membro.usuarios?.nome}</strong>
                                                 <span style={{
                                                     marginLeft: 'var(--space-2)',
                                                     padding: '2px 8px',
@@ -653,30 +658,30 @@ export default function Dashboard({ isAdmin = false }) {
                                                     {membro.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
                                                 </span>
                                                 <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', margin: 'var(--space-1) 0 0 0' }}>
-                                                    📱 {membro.telefone}
+                                                    📱 {membro.usuarios?.telefone}
                                                 </p>
                                             </div>
                                         </div>
 
                                         {/* Documentos */}
                                         <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
-                                            {membro.is_motorista && membro.cnh_url && (
+                                            {membro.is_motorista && membro.usuarios?.cnh_url && (
                                                 <div>
                                                     <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🪪 CNH:</p>
                                                     <img
-                                                        src={membro.cnh_url}
-                                                        alt={`CNH de ${membro.nome}`}
+                                                        src={membro.usuarios.cnh_url}
+                                                        alt={`CNH de ${membro.usuarios.nome}`}
                                                         onClick={() => setImagemExpandida(membro.cnh_url)}
                                                         style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
                                                     />
                                                 </div>
                                             )}
-                                            {membro.carteirinha_url && (
+                                            {membro.usuarios?.carteirinha_url && (
                                                 <div>
                                                     <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🎓 Carteirinha:</p>
                                                     <img
-                                                        src={membro.carteirinha_url}
-                                                        alt={`Carteirinha de ${membro.nome}`}
+                                                        src={membro.usuarios.carteirinha_url}
+                                                        alt={`Carteirinha de ${membro.usuarios.nome}`}
                                                         onClick={() => setImagemExpandida(membro.carteirinha_url)}
                                                         style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
                                                     />
@@ -1055,10 +1060,10 @@ export default function Dashboard({ isAdmin = false }) {
                                             borderRadius: 'var(--radius-sm)'
                                         }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                {membro.carteirinha_url ? (
-                                                    <a href={membro.carteirinha_url} target="_blank" rel="noopener noreferrer">
+                                                {membro.usuarios?.carteirinha_url ? (
+                                                    <a href={membro.usuarios.carteirinha_url} target="_blank" rel="noopener noreferrer">
                                                         <img
-                                                            src={membro.carteirinha_url}
+                                                            src={membro.usuarios.carteirinha_url}
                                                             alt="Carteirinha"
                                                             style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }}
                                                         />
@@ -1069,8 +1074,8 @@ export default function Dashboard({ isAdmin = false }) {
                                                     </div>
                                                 )}
                                                 <div>
-                                                    <strong>{membro.nome}</strong>
-                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.telefone)}</div>
+                                                    <strong>{membro.usuarios?.nome}</strong>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.usuarios?.telefone)}</div>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '8px' }}>

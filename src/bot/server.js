@@ -1,11 +1,7 @@
-/**
- * Servidor do Bot WhatsApp
- * Recebe webhooks da Evolution API e processa mensagens
- */
-
 import 'dotenv/config';
-
 import express from 'express';
+import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import { detectIntent, getMensagemAjuda, getSaudacao } from './intentParser.js';
 import {
     getOrCreateMembro,
@@ -26,8 +22,32 @@ import {
     renovarInviteLink,
     promoverParaAdmin
 } from './evolutionApi.js';
-import { supabase } from '../lib/supabase.js';
 import { getPhoneLookupFormats } from '../lib/phoneUtils.js';
+
+// Inicializar Supabase com Service Role Key para ter permissões de admin (ignorar RLS)
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error('Supabase URL ou Service Role Key não configurados no .env');
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    realtime: {
+        params: {
+            eventsPerSecond: 10,
+        },
+        heartbeatIntervalMs: 15000,
+        timeout: 30000,
+        transport: WebSocket,
+        reconnectAfterMs: (tries) => {
+            // Reconnect strategy: 1s, 2s, 4s, 8s, max 30s
+            const delay = Math.min(1000 * Math.pow(2, tries), 30000);
+            console.log(`🔄 Realtime reconnect attempt ${tries + 1}, waiting ${delay}ms...`);
+            return delay;
+        },
+    },
+});
 
 const app = express();
 app.use(express.json());
@@ -373,20 +393,20 @@ app.post('/webhook', async (req, res) => {
                 break;
 
             case 'saldo':
-                resposta = await getMensagemSaldo(membro.id, membro.nome);
+                resposta = await getMensagemSaldo(membro.id, membro.usuarios.nome);
                 break;
 
             case 'saudacao':
                 // Saudação rápida e amigável
-                resposta = `${getSaudacao()}, ${membro.nome}! 👋\n\nPosso te ajudar com sua carona. Digite *ajuda* para ver o que posso fazer!`;
+                resposta = `${getSaudacao()}, ${membro.usuarios.nome}! 👋\n\nPosso te ajudar com sua carona. Digite *ajuda* para ver o que posso fazer!`;
                 break;
 
             case 'ajuda':
-                resposta = getMensagemAjuda(membro.nome);
+                resposta = getMensagemAjuda(membro.usuarios.nome);
                 break;
 
             default:
-                resposta = `🤔 Não entendi, ${membro.nome}. Tente:\n• *"vou hoje"* - confirmar presença\n• *"não vou"* - cancelar\n• *"quem vai?"* - ver status\n• *"ajuda"* - ver comandos`;
+                resposta = `🤔 Não entendi, ${membro.usuarios.nome}. Tente:\n• *"vou hoje"* - confirmar presença\n• *"não vou"* - cancelar\n• *"quem vai?"* - ver status\n• *"ajuda"* - ver comandos`;
         }
 
         // Logar atividade
@@ -438,10 +458,10 @@ async function handleGroupParticipantsUpdate(data, res) {
         if (grupo.motorista_id) {
             const { data: motorista } = await supabase
                 .from('membros')
-                .select('telefone')
+                .select('*, usuarios(telefone)')
                 .eq('id', grupo.motorista_id)
                 .single();
-            motoristaTelefone = motorista?.telefone;
+            motoristaTelefone = motorista?.usuarios?.telefone;
         }
 
         for (const participantJid of participants) {
@@ -478,7 +498,7 @@ async function handleGroupParticipantsUpdate(data, res) {
             // Verificar se membro já existe
             const membroExistente = await getOrCreateMembro(telefone, `${telefone}@s.whatsapp.net`);
             if (membroExistente) {
-                console.log(`👤 Membro já existe: ${membroExistente.nome} (${telefone})`);
+                console.log(`👤 Membro já existe: ${membroExistente.usuarios.nome} (${telefone})`);
                 continue;
             }
 
@@ -664,6 +684,186 @@ app.get('/api/invite-link/:grupoId', async (req, res) => {
 });
 
 /**
+ * API: Solicitar redefinição de senha (Esqueci minha senha)
+ * Gera código, salva no banco e envia por WhatsApp
+ */
+app.post('/api/auth/request-reset', async (req, res) => {
+    console.log(`🔑 Recebendo solicitação de reset de senha.`);
+    try {
+        const { telefone } = req.body;
+        console.log(`📱 Telefone recebido: ${telefone}`);
+
+        if (!telefone) {
+            return res.status(400).json({ error: 'Telefone é obrigatório' });
+        }
+
+        // Normalizar telefone (apenas números)
+        const telefoneNumeros = telefone.replace(/\D/g, '');
+        console.log(`🔢 Telefone normalizado: ${telefoneNumeros}`);
+
+        // Validar se usuário existe
+        // Tentar encontrar variantes (com ou sem 55)
+        const variantes = [telefoneNumeros];
+        if (!telefoneNumeros.startsWith('55')) {
+            variantes.push('55' + telefoneNumeros);
+        }
+        if (telefoneNumeros.startsWith('55') && telefoneNumeros.length > 2) {
+            variantes.push(telefoneNumeros.substring(2));
+        }
+
+        console.log(`🔍 Buscando usuário com variantes: ${variantes.join(', ')}`);
+
+        const { data: usuario, error: userError } = await supabase
+            .from('usuarios')
+            .select('id, telefone, nome')
+            .in('telefone', variantes)
+            .limit(1)
+            .single();
+
+        if (userError || !usuario) {
+            // Por segurança, não revelar que usuário não existe, mas logar
+            console.log(`⚠️ Tentativa de reset para telefone não cadastrado: ${telefoneNumeros}`);
+            if (userError) console.error(`Erro Supabase: ${userError.message}`);
+            return res.json({ success: true, message: 'Se o telefone estiver cadastrado, você receberá um código.' });
+        }
+
+        console.log(`👤 Usuário encontrado: ${usuario.nome} (${usuario.telefone})`);
+
+        // Gerar código de 6 dígitos
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Data de expiração (15 minutos)
+        const expiresAt = new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+        // Salvar código no banco (usando o telefone exato do usuário no banco)
+        // Primeiro, invalidar códigos anteriores
+        await supabase
+            .from('codigos_verificacao')
+            .delete()
+            .eq('telefone', usuario.telefone);
+
+        // Inserir novo código
+        const { error: insertError } = await supabase
+            .from('codigos_verificacao')
+            .insert({
+                telefone: usuario.telefone,
+                codigo: codigo,
+                expires_at: expiresAt.toISOString()
+            });
+
+        if (insertError) {
+            console.error('Erro ao salvar código:', JSON.stringify(insertError, null, 2));
+            throw new Error(`Erro no banco de dados: ${insertError.message || insertError.details || 'Desconhecido'}`);
+        }
+
+        console.log(`💾 Código salvo no banco. Expirando em: ${expiresAt.toISOString()}`);
+
+        const whatsappId = `${usuario.telefone}@s.whatsapp.net`;
+        const mensagem = `🔐 *Cajurona: Redefinição de Senha*\n\nOlá, ${usuario.nome}!\n\nSeu código de verificação é: *${codigo}*\n\nEle é válido por 15 minutos. Se você não solicitou isso, ignore esta mensagem.`;
+
+        console.log(`🚀 Enviando mensagem WhatsApp para: ${whatsappId}`);
+        console.log(`🚀 Telefone do usuário no banco: "${usuario.telefone}"`);
+        console.log(`🚀 WhatsApp ID construído: "${whatsappId}"`);
+
+        // Forçar envio (checkDuplicate = false)
+        try {
+            await enviarMensagem(whatsappId, mensagem, false);
+            console.log(`✅ Código de reset enviado para ${usuario.nome} (${usuario.telefone})`);
+        } catch (sendError) {
+            console.error(`❌ FALHA ao enviar código por WhatsApp para ${whatsappId}:`, sendError.message);
+            console.error(`❌ O código foi gerado e salvo no banco, mas NÃO foi entregue por WhatsApp.`);
+            return res.status(200).json({
+                success: true,
+                message: 'Código gerado, mas houve um problema ao enviar por WhatsApp. Tente novamente.',
+                whatsappError: true
+            });
+        }
+
+        return res.status(200).json({ success: true, message: 'Código enviado com sucesso.' });
+
+    } catch (error) {
+        console.error('❌ Erro no request-reset:', error);
+        return res.status(500).json({
+            error: error.message || 'Erro ao processar solicitação.',
+            details: error.toString()
+        });
+    }
+});
+
+/**
+ * API: Redefinir senha com código
+ */
+app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+        const { telefone, codigo, novaSenha } = req.body;
+
+        if (!telefone || !codigo || !novaSenha) {
+            return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
+        }
+
+        const telefoneNumeros = telefone.replace(/\D/g, '');
+
+        // 1. Encontrar o telefone correto do usuário (lidar com variantes)
+        const variantes = [telefoneNumeros];
+        if (!telefoneNumeros.startsWith('55')) {
+            variantes.push('55' + telefoneNumeros);
+        }
+        if (telefoneNumeros.startsWith('55') && telefoneNumeros.length > 2) {
+            variantes.push(telefoneNumeros.substring(2));
+        }
+
+        const { data: usuario, error: userError } = await supabase
+            .from('usuarios')
+            .select('id, telefone')
+            .in('telefone', variantes)
+            .limit(1)
+            .single();
+
+        if (userError || !usuario) {
+            return res.status(400).json({ error: 'Usuário não encontrado.' });
+        }
+
+        // 2. Verificar o código
+        const { data: registroCodigo, error: codeError } = await supabase
+            .from('codigos_verificacao')
+            .select('*')
+            .eq('telefone', usuario.telefone)
+            .eq('codigo', codigo)
+            .gt('expires_at', new Date().toISOString()) // Não expirado
+            .single();
+
+        if (codeError || !registroCodigo) {
+            return res.status(400).json({ error: 'Código inválido ou expirado.' });
+        }
+
+        // 3. Atualizar senha
+        const { error: updateError } = await supabase
+            .from('usuarios')
+            .update({ senha_hash: novaSenha }) // Nota: Idealmente seria hash real, mantendo padrão atual
+            .eq('id', usuario.id);
+
+        if (updateError) {
+            throw new Error('Erro ao atualizar senha.');
+        }
+
+        // 4. Deletar código usado
+        await supabase
+            .from('codigos_verificacao')
+            .delete()
+            .eq('id', registroCodigo.id);
+
+        console.log(`✅ Senha redefinida para usuário: ${usuario.telefone}`);
+
+        res.json({ success: true, message: 'Senha redefinida com sucesso!' });
+
+    } catch (error) {
+        console.error('❌ Erro no reset-password:', error);
+        res.status(500).json({ error: error.message || 'Erro ao redefinir senha.' });
+    }
+});
+
+/**
  * Health check
  */
 app.get('/health', (req, res) => {
@@ -684,10 +884,68 @@ app.post('/test', async (req, res) => {
     res.json({ intent, msgRecebida: texto });
 });
 
+/**
+ * Supabase Realtime: Escutar novos códigos de verificação
+ * Quando o frontend gera um código via RPC, o bot detecta e envia por WhatsApp
+ */
+function iniciarListenerCodigosVerificacao() {
+    console.log('👂 Iniciando listener de códigos de verificação...');
+
+    const channel = supabase
+        .channel('codigos_verificacao_inserts')
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'codigos_verificacao'
+            },
+            async (payload) => {
+                const { new: registro } = payload;
+                console.log(`🔔 Novo código de verificação detectado para: ${registro.telefone}`);
+
+                try {
+                    // Buscar nome do usuário
+                    const { data: usuario } = await supabase
+                        .from('usuarios')
+                        .select('nome')
+                        .eq('telefone', registro.telefone)
+                        .single();
+
+                    const nome = usuario?.nome || 'Usuário';
+
+                    // Construir mensagem WhatsApp
+                    const whatsappId = `${registro.telefone}@s.whatsapp.net`;
+                    const mensagem = `🔐 *Cajurona: Redefinição de Senha*\n\nOlá, ${nome}!\n\nSeu código de verificação é: *${registro.codigo}*\n\nEle é válido por 15 minutos. Se você não solicitou isso, ignore esta mensagem.`;
+
+
+
+                    // Enviar por WhatsApp (sem verificação de duplicatas)
+                    await enviarMensagem(whatsappId, mensagem, false);
+
+                    console.log(`✅ Código de reset enviado por WhatsApp para ${nome} (${registro.telefone})`);
+                } catch (error) {
+                    console.error(`❌ Erro ao enviar código por WhatsApp para ${registro.telefone}:`, error.message);
+                }
+            }
+        )
+        .subscribe((status, err) => {
+            console.log(`📡 Status do listener codigos_verificacao: ${status}`);
+            if (err) {
+                console.error(`❌ Erro no subscribe Realtime:`, err.message || err);
+            }
+        });
+
+    return channel;
+}
+
 app.listen(PORT, () => {
     console.log(`🤖 Bot server running on port ${PORT}`);
     console.log(`📡 Webhook: http://localhost:${PORT}/webhook`);
     console.log(`📡 API: http://localhost:${PORT}/api/create-whatsapp-group`);
     console.log(`📡 API: http://localhost:${PORT}/api/invite-link/:grupoId`);
     console.log(`❤️ Health: http://localhost:${PORT}/health`);
+
+    // Iniciar listener de códigos de verificação
+    iniciarListenerCodigosVerificacao();
 });

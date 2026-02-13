@@ -11,6 +11,9 @@ const AuthContext = createContext(null);
 
 const STORAGE_KEY = 'cajurona_session';
 
+// Super admin phones (comma-separated in env, e.g. "5579998223366,5511999998888")
+const SUPER_ADMIN_PHONES = (import.meta.env.VITE_SUPER_ADMIN_PHONES || '').split(',').map(p => p.trim()).filter(Boolean);
+
 /**
  * Provider de autenticação
  */
@@ -42,6 +45,10 @@ export function AuthProvider({ children }) {
         const aprovados = memberships.filter(m => m.status_aprovacao === 'aprovado');
         const activeMembership = aprovados[0] || memberships[0] || null;
 
+        // Check super admin status
+        const isSuperAdmin = SUPER_ADMIN_PHONES.length > 0 &&
+            SUPER_ADMIN_PHONES.some(p => usuario.telefone?.includes(p));
+
         const session = {
             // Dados do usuário (identidade)
             id: usuario.id,
@@ -57,6 +64,7 @@ export function AuthProvider({ children }) {
             membroId: activeMembership?.id || null,
             role: activeMembership?.is_motorista ? 'motorista' : 'passageiro',
             isMotorista: activeMembership?.is_motorista || false,
+            isSuperAdmin,
             statusAprovacao: activeMembership?.status_aprovacao || null,
             // Todos os grupos
             memberships: memberships
@@ -122,6 +130,9 @@ export function AuthProvider({ children }) {
             const aprovados = (memberships || []).filter(m => m.status_aprovacao === 'aprovado');
             const activeMembership = currentMembership || aprovados[0] || (memberships || [])[0] || null;
 
+            const isSuperAdmin = SUPER_ADMIN_PHONES.length > 0 &&
+                SUPER_ADMIN_PHONES.some(p => usuario.telefone?.includes(p));
+
             const session = {
                 id: usuario.id,
                 nome: usuario.nome,
@@ -135,6 +146,7 @@ export function AuthProvider({ children }) {
                 membroId: activeMembership?.id || null,
                 role: activeMembership?.is_motorista ? 'motorista' : 'passageiro',
                 isMotorista: activeMembership?.is_motorista || false,
+                isSuperAdmin,
                 statusAprovacao: activeMembership?.status_aprovacao || null,
                 memberships: memberships || []
             };
@@ -167,6 +179,7 @@ export function AuthProvider({ children }) {
      */
     const hasRole = (requiredRole) => {
         if (!user) return false;
+        if (user.isSuperAdmin) return true;
         if (requiredRole === 'motorista') return user.role === 'motorista';
         return true;
     };
@@ -182,6 +195,7 @@ export function AuthProvider({ children }) {
         hasRole,
         role: user?.role || null,
         isMotorista: user?.isMotorista || false,
+        isSuperAdmin: user?.isSuperAdmin || false,
         grupoId: user?.grupoId || null
     };
 
