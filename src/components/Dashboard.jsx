@@ -9,15 +9,17 @@ import AvailableGroups from './AvailableGroups.jsx';
 export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
     const navigate = useNavigate();
-    const { user, logout, isMotorista, refreshSession } = useAuth();
+    const { user, logout, isMotorista, refreshSession, switchGroup, isSuperAdmin } = useAuth();
+    const [showGroupSwitcher, setShowGroupSwitcher] = useState(false);
 
-    // Determinar se é admin: prop OU usuário logado como motorista
-    const canEdit = isAdmin || isMotorista;
+    // Determinar se é admin: prop OU usuário logado como motorista OU super admin
+    const canEdit = isAdmin || isMotorista || isSuperAdmin;
 
     const [grupo, setGrupo] = useState(null);
     const [membros, setMembros] = useState([]);
     const [pendentes, setPendentes] = useState([]);
     const [viagens, setViagens] = useState([]);
+    const [saldoPorMembro, setSaldoPorMembro] = useState({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [imagemExpandida, setImagemExpandida] = useState(null);
@@ -83,10 +85,10 @@ export default function Dashboard({ isAdmin = false }) {
                 tempo_limite_cancelamento: grupoData.tempo_limite_cancelamento || 30
             });
 
-            // Buscar membros aprovados
+            // Buscar membros aprovados (JOIN com usuarios para nome/telefone)
             const { data: membrosData, error: membrosError } = await supabase
                 .from('membros')
-                .select('*, usuarios(nome, telefone, cnh_url)')
+                .select('*, usuarios(nome, telefone, matricula, cnh_url)')
                 .eq('grupo_id', grupoId)
                 .eq('ativo', true)
                 .eq('status_aprovacao', 'aprovado')
@@ -95,19 +97,34 @@ export default function Dashboard({ isAdmin = false }) {
             if (membrosError) {
                 console.error('Erro ao buscar membros:', membrosError);
             }
-            console.log('Membros carregados:', membrosData);
-            setMembros(membrosData || []);
+
+            // Achatar dados de identidade do usuarios no membro
+            const membrosFlat = (membrosData || []).map(m => ({
+                ...m,
+                nome: m.usuarios?.nome || m.nome || 'Sem nome',
+                telefone: m.usuarios?.telefone || m.telefone,
+                matricula: m.usuarios?.matricula,
+                cnh_url: m.usuarios?.cnh_url
+            }));
+            setMembros(membrosFlat);
 
             // Buscar membros pendentes de aprovação (apenas para motoristas)
             if (canEdit) {
                 const { data: pendentesData } = await supabase
                     .from('membros')
-                    .select('*, usuarios(nome, telefone, cnh_url)')
+                    .select('*, usuarios(nome, telefone, matricula, cnh_url)')
                     .eq('grupo_id', grupoId)
                     .eq('status_aprovacao', 'pendente')
                     .order('created_at', { ascending: true });
 
-                setPendentes(pendentesData || []);
+                const pendentesFlat = (pendentesData || []).map(m => ({
+                    ...m,
+                    nome: m.usuarios?.nome || m.nome || 'Sem nome',
+                    telefone: m.usuarios?.telefone || m.telefone,
+                    matricula: m.usuarios?.matricula,
+                    cnh_url: m.usuarios?.cnh_url
+                }));
+                setPendentes(pendentesFlat);
             }
 
             // Buscar viagens da semana
@@ -129,6 +146,7 @@ export default function Dashboard({ isAdmin = false }) {
                 .order('tipo', { ascending: true });
 
             setViagens(viagensData || []);
+            setSaldoPorMembro({}); // Inicializa vazio para evitar erros de renderização
 
         } catch (err) {
             console.error('Erro ao carregar dados:', err);
@@ -330,11 +348,72 @@ export default function Dashboard({ isAdmin = false }) {
         <div className="container">
             {/* Header */}
             <header className="header">
-                <div>
-                    <h1 className="header-title">
+                <div style={{ position: 'relative' }}>
+                    <h1 className="header-title"
+                        onClick={() => setShowGroupSwitcher(!showGroupSwitcher)}
+                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+                    >
                         <span className="icon">🚗</span>
                         {grupo.nome}
+                        <span style={{ fontSize: '0.6em', opacity: 0.7 }}>▼</span>
                     </h1>
+
+                    {showGroupSwitcher && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            background: 'var(--bg-card)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 'var(--radius-md)',
+                            boxShadow: 'var(--shadow-lg)',
+                            zIndex: 100,
+                            minWidth: '200px',
+                            overflow: 'hidden'
+                        }}>
+                            {user?.grupos?.map(g => (
+                                <button
+                                    key={g.id}
+                                    onClick={() => {
+                                        switchGroup(g.id);
+                                        setShowGroupSwitcher(false);
+                                    }}
+                                    style={{
+                                        display: 'block',
+                                        width: '100%',
+                                        textAlign: 'left',
+                                        padding: 'var(--space-2) var(--space-3)',
+                                        background: g.id === grupoId ? 'var(--bg-primary)' : 'transparent',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        color: 'var(--text-primary)'
+                                    }}
+                                >
+                                    {g.nome}
+                                </button>
+                            ))}
+                            <div style={{ borderTop: '1px solid var(--border-color)', margin: 'var(--space-1) 0' }}></div>
+                            <button
+                                onClick={() => {
+                                    navigate('/grupos');
+                                    setShowGroupSwitcher(false);
+                                }}
+                                style={{
+                                    display: 'block',
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    padding: 'var(--space-2) var(--space-3)',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    color: 'var(--primary)',
+                                    fontWeight: 500
+                                }}
+                            >
+                                + Gerenciar Grupos
+                            </button>
+                        </div>
+                    )}
                     <p className="header-subtitle">
                         {membros.length} membro{membros.length !== 1 ? 's' : ''} •
                         {grupo.modelo_precificacao === 'por_trajeto'
@@ -433,7 +512,7 @@ export default function Dashboard({ isAdmin = false }) {
                         {tab === 'membros' && '👥 Membros'}
                         {tab === 'config' && '⚙️ Config'}
                         {tab === 'perfil' && '👤 Meu Perfil'}
-                        {tab === 'grupos' && '🔍 Grupos'}
+                        {tab === 'grupos' && '📋 Meus Grupos'}
                     </button>
                 ))}
             </div>
@@ -463,7 +542,7 @@ export default function Dashboard({ isAdmin = false }) {
                                     }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-2)' }}>
                                             <div>
-                                                <strong>{membro.usuarios?.nome || 'Usuário'}</strong>
+                                                <strong>{membro.nome}</strong>
                                                 <span style={{
                                                     marginLeft: 'var(--space-2)',
                                                     padding: '2px 8px',
@@ -476,20 +555,20 @@ export default function Dashboard({ isAdmin = false }) {
                                                     {membro.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
                                                 </span>
                                                 <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', margin: 'var(--space-1) 0 0 0' }}>
-                                                    📱 {membro.usuarios?.telefone || 'Telefone não disponível'}
+                                                    📱 {membro.telefone || 'Telefone não disponível'}
                                                 </p>
                                             </div>
                                         </div>
 
                                         {/* Documentos */}
                                         <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
-                                            {membro.is_motorista && membro.usuarios?.cnh_url && (
+                                            {membro.is_motorista && membro.cnh_url && (
                                                 <div>
                                                     <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🪪 CNH:</p>
                                                     <img
-                                                        src={membro.usuarios.cnh_url}
-                                                        alt={`CNH de ${membro.usuarios?.nome || membro.nome}`}
-                                                        onClick={() => setImagemExpandida(membro.usuarios.cnh_url)}
+                                                        src={membro.cnh_url}
+                                                        alt={`CNH de ${membro.nome}`}
+                                                        onClick={() => setImagemExpandida(membro.cnh_url)}
                                                         style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
                                                     />
                                                 </div>
@@ -499,7 +578,7 @@ export default function Dashboard({ isAdmin = false }) {
                                                     <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🎓 Carteirinha:</p>
                                                     <img
                                                         src={membro.carteirinha_url}
-                                                        alt={`Carteirinha de ${membro.usuarios?.nome || membro.nome}`}
+                                                        alt={`Carteirinha de ${membro.nome}`}
                                                         onClick={() => setImagemExpandida(membro.carteirinha_url)}
                                                         style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
                                                     />
@@ -826,8 +905,8 @@ export default function Dashboard({ isAdmin = false }) {
                                                     </div>
                                                 )}
                                                 <div>
-                                                    <strong>{membro.usuarios?.nome || membro.nome}</strong>
-                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.usuarios?.telefone || membro.telefone)}</div>
+                                                    <strong>{membro.nome}</strong>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.telefone)}</div>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -863,9 +942,8 @@ export default function Dashboard({ isAdmin = false }) {
                     ) : (
                         <div className="member-list">
                             {membros.map(membro => {
-                                const nome = membro.usuarios?.nome || membro.nome || 'Usuário';
-                                const telefone = membro.usuarios?.telefone || membro.telefone || '';
-                                const iniciais = nome.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                                const membroSaldo = saldoPorMembro[membro.id] || 0;
+                                const iniciais = membro.nome?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '??';
                                 return (
                                     <div key={membro.id} className="member-item">
                                         <div className={`member-avatar ${membro.is_motorista ? 'driver' : 'confirmed'}`}
@@ -874,9 +952,22 @@ export default function Dashboard({ isAdmin = false }) {
                                             {iniciais}
                                         </div>
                                         <div className="member-info">
-                                            <div className="member-name">{nome}</div>
+                                            <div className="member-name">{membro.nome}</div>
                                             <div className="member-status">
-                                                📱 {telefone || 'Não informado'}
+                                                {canEdit ? (
+                                                    /* Motorista vê telefone + saldo */
+                                                    <>
+                                                        📱 {membro.telefone || 'Sem telefone'}
+                                                        {!membro.is_motorista && membroSaldo > 0 && (
+                                                            <span style={{ marginLeft: 'var(--space-2)', color: 'var(--error, #dc3545)', fontWeight: 600, fontSize: 'var(--font-size-xs)' }}>
+                                                                • Deve R$ {membroSaldo.toFixed(2)}
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    /* Passageiro vê só telefone */
+                                                    <>📱 {membro.telefone || 'Sem telefone'}</>
+                                                )}
                                             </div>
                                         </div>
                                         {membro.is_motorista && (
