@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 /**
  * Painel de aprovação do super-admin
@@ -10,18 +11,19 @@ import { supabase } from '../lib/supabase.js';
 export default function AdminApproval() {
     const [searchParams] = useSearchParams();
     const adminSecret = searchParams.get('secret');
+    const { isSuperAdmin } = useAuth();
     const [autenticado, setAutenticado] = useState(false);
     const [pendentes, setPendentes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [imagemExpandida, setImagemExpandida] = useState(null);
 
-    // Verificar senha de admin
+    // Verificar acesso: secret na URL OU super admin logado
     useEffect(() => {
         const expectedSecret = import.meta.env.VITE_ADMIN_SECRET;
-        if (adminSecret === expectedSecret) {
+        if ((adminSecret && adminSecret === expectedSecret) || isSuperAdmin) {
             setAutenticado(true);
         }
-    }, [adminSecret]);
+    }, [adminSecret, isSuperAdmin]);
 
     // Carregar usuários pendentes
     useEffect(() => {
