@@ -9,7 +9,7 @@ import AvailableGroups from './AvailableGroups.jsx';
 export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
     const navigate = useNavigate();
-    const { user, logout, isMotorista } = useAuth();
+    const { user, logout, isMotorista, refreshSession } = useAuth();
 
     // Determinar se é admin: prop OU usuário logado como motorista
     const canEdit = isAdmin || isMotorista;
@@ -201,18 +201,74 @@ export default function Dashboard({ isAdmin = false }) {
         }
     };
 
-    // Sair do grupo (passageiros) - TODO: implementar
+    // Sair do grupo (passageiros)
     const sairDoGrupo = async () => {
-        if (confirm('Tem certeza que deseja sair do grupo?')) {
-            // Implementar lógica de sair
-            alert('Funcionalidade em desenvolvimento');
+        if (!confirm('Tem certeza que deseja sair do grupo? Seu histórico de presenças será removido.')) return;
+
+        try {
+            // Deletar registro de membro
+            const { error } = await supabase
+                .from('membros')
+                .delete()
+                .eq('usuario_id', user.id)
+                .eq('grupo_id', grupoId);
+
+            if (error) throw error;
+
+            await refreshSession();
+            navigate('/');
+        } catch (err) {
+            console.error('Erro ao sair do grupo:', err);
+            alert('Erro ao sair do grupo: ' + err.message);
         }
     };
 
     // Excluir grupo (motoristas)
-    const excluirGrupo = () => {
-        if (confirm('Tem certeza que deseja EXCLUIR o grupo? Esta ação é irreversível!')) {
-            alert('Funcionalidade em desenvolvimento');
+    const excluirGrupo = async () => {
+        if (!confirm('Tem certeza que deseja EXCLUIR o grupo? Todos os membros, viagens e dados financeiros serão perdidos. Esta ação é irreversível!')) return;
+        if (!confirm('ÚLTIMA CONFIRMAÇÃO: Excluir o grupo "' + grupo?.nome + '" permanentemente?')) return;
+
+        try {
+            const { error } = await supabase
+                .from('grupos')
+                .delete()
+                .eq('id', grupoId);
+
+            if (error) throw error;
+
+            await refreshSession();
+            navigate('/');
+        } catch (err) {
+            console.error('Erro ao excluir grupo:', err);
+            alert('Erro ao excluir grupo: ' + err.message);
+        }
+    };
+
+    // Deletar conta do usuário
+    const deletarConta = async () => {
+        if (!confirm('Tem certeza que deseja EXCLUIR sua conta? Você será removido de todos os grupos. Esta ação é irreversível!')) return;
+        if (!confirm('ÚLTIMA CONFIRMAÇÃO: Excluir permanentemente sua conta (' + user?.nome + ')?')) return;
+
+        try {
+            // Deletar todas as memberships primeiro (CASCADE deveria lidar, mas por segurança)
+            await supabase
+                .from('membros')
+                .delete()
+                .eq('usuario_id', user.id);
+
+            // Deletar conta
+            const { error } = await supabase
+                .from('usuarios')
+                .delete()
+                .eq('id', user.id);
+
+            if (error) throw error;
+
+            logout();
+            navigate('/');
+        } catch (err) {
+            console.error('Erro ao deletar conta:', err);
+            alert('Erro ao deletar conta: ' + err.message);
         }
     };
 
@@ -565,14 +621,14 @@ export default function Dashboard({ isAdmin = false }) {
                     </div>
 
                     {/* WhatsApp Invite Link */}
-                    {grupo.whatsapp_group_id && (
+                    {(grupo.whatsapp_group_id || grupo.invite_link) && (
                         <div className="day-detail" style={{ marginBottom: 'var(--space-4)' }}>
                             <h3 style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-lg)' }}>
-                                📱 Grupo WhatsApp
+                                📱 Link do Grupo no WhatsApp
                             </h3>
                             {inviteLinkLoading ? (
                                 <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>Carregando link...</p>
-                            ) : inviteLink ? (
+                            ) : (inviteLink || grupo.invite_link) ? (
                                 <div>
                                     <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-2)' }}>
                                         Compartilhe o link abaixo para novos membros entrarem no grupo:
@@ -586,17 +642,18 @@ export default function Dashboard({ isAdmin = false }) {
                                         marginBottom: 'var(--space-2)',
                                         color: 'var(--text-secondary)'
                                     }}>
-                                        {inviteLink}
+                                        {inviteLink || grupo.invite_link}
                                     </div>
                                     <button
                                         className="btn btn-primary"
                                         style={{ width: '100%' }}
                                         onClick={() => {
-                                            navigator.clipboard.writeText(inviteLink);
-                                            alert('Link de convite copiado!');
+                                            const link = inviteLink || grupo.invite_link;
+                                            navigator.clipboard.writeText(link);
+                                            alert('Link do grupo no WhatsApp copiado!');
                                         }}
                                     >
-                                        📋 Copiar Link de Convite WhatsApp
+                                        📋 Copiar Link do Grupo no WhatsApp
                                     </button>
                                 </div>
                             ) : (
@@ -911,17 +968,46 @@ export default function Dashboard({ isAdmin = false }) {
                         <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>
                             Ações irreversíveis. Tenha cuidado.
                         </p>
-                        <button
-                            className="btn"
-                            style={{
-                                background: 'var(--error)',
-                                color: 'white',
-                                opacity: 0.8
-                            }}
-                            onClick={excluirGrupo}
-                        >
-                            🗑️ Excluir Grupo
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                            {canEdit ? (
+                                <button
+                                    className="btn"
+                                    style={{
+                                        background: 'var(--error)',
+                                        color: 'white',
+                                        opacity: 0.8
+                                    }}
+                                    onClick={excluirGrupo}
+                                >
+                                    🗑️ Excluir Grupo
+                                </button>
+                            ) : (
+                                <button
+                                    className="btn"
+                                    style={{
+                                        background: 'var(--error)',
+                                        color: 'white',
+                                        opacity: 0.8
+                                    }}
+                                    onClick={sairDoGrupo}
+                                >
+                                    🚪 Sair do Grupo
+                                </button>
+                            )}
+                            <button
+                                className="btn"
+                                style={{
+                                    background: 'transparent',
+                                    color: 'var(--error)',
+                                    border: '1px solid var(--error)',
+                                    opacity: 0.7,
+                                    fontSize: 'var(--font-size-sm)'
+                                }}
+                                onClick={deletarConta}
+                            >
+                                🗑️ Excluir Minha Conta
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
