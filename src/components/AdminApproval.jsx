@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
@@ -10,8 +10,9 @@ import { useAuth } from '../contexts/AuthContext.jsx';
  */
 export default function AdminApproval() {
     const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
     const adminSecret = searchParams.get('secret');
-    const { isSuperAdmin } = useAuth();
+    const { user, isSuperAdmin, loading: authLoading } = useAuth();
     const [autenticado, setAutenticado] = useState(false);
     const [pendentes, setPendentes] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -31,7 +32,6 @@ export default function AdminApproval() {
 
         const load = async () => {
             try {
-                // Buscar usuários com CNH ou matrícula pendente
                 const { data, error } = await supabase
                     .from('usuarios')
                     .select('*')
@@ -57,7 +57,6 @@ export default function AdminApproval() {
         try {
             const updateData = { [campo]: novoStatus };
 
-            // Se aprovando CNH, pode ser motorista
             if (campo === 'cnh_status' && novoStatus === 'aprovado') {
                 updateData.pode_ser_motorista = true;
             }
@@ -69,7 +68,6 @@ export default function AdminApproval() {
 
             if (error) throw error;
 
-            // Atualizar lista
             setPendentes(prev => prev.map(u => {
                 if (u.id === usuarioId) {
                     return { ...u, ...updateData };
@@ -82,16 +80,54 @@ export default function AdminApproval() {
         }
     };
 
-    if (!autenticado) {
+    // === Early returns (after all hooks) ===
+
+    // Aguardando autenticação carregar
+    if (authLoading) {
+        return (
+            <div className="login-container">
+                <p style={{ color: 'var(--text-muted)' }}>Carregando...</p>
+            </div>
+        );
+    }
+
+    // Não logado → redirecionar para login
+    if (!user && !adminSecret) {
         return (
             <div className="login-container">
                 <div className="login-card" style={{ textAlign: 'center' }}>
-                    <h1>🔒 Acesso Restrito</h1>
-                    <p style={{ color: 'var(--text-muted)' }}>
-                        O painel de aprovações requer autenticação de super-admin.
+                    <div style={{ fontSize: '3rem', marginBottom: 'var(--space-3)' }}>🔒</div>
+                    <h2>Painel de Aprovações</h2>
+                    <p style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-4)' }}>
+                        Você precisa estar logado como super-admin para acessar este painel.
                     </p>
-                    <Link to="/" className="btn btn-secondary" style={{ marginTop: 'var(--space-4)' }}>
-                        🏠 Voltar
+                    <button
+                        className="btn btn-primary"
+                        style={{ width: '100%', marginBottom: 'var(--space-2)' }}
+                        onClick={() => navigate('/login', { state: { from: { pathname: '/aprovacoes' } } })}
+                    >
+                        🔑 Fazer Login
+                    </button>
+                    <Link to="/" className="btn btn-secondary" style={{ width: '100%', display: 'block' }}>
+                        🏠 Voltar ao Início
+                    </Link>
+                </div>
+            </div>
+        );
+    }
+
+    // Logado mas não é super admin
+    if (user && !autenticado) {
+        return (
+            <div className="login-container">
+                <div className="login-card" style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '3rem', marginBottom: 'var(--space-3)' }}>⛔</div>
+                    <h2>Acesso Negado</h2>
+                    <p style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-4)' }}>
+                        Sua conta ({user.nome}) não tem permissão de super-admin.
+                    </p>
+                    <Link to="/" className="btn btn-secondary" style={{ width: '100%', display: 'block' }}>
+                        🏠 Voltar ao Início
                     </Link>
                 </div>
             </div>
