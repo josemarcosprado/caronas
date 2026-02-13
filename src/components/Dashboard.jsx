@@ -9,7 +9,8 @@ import AvailableGroups from './AvailableGroups.jsx';
 export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
     const navigate = useNavigate();
-    const { user, logout, isMotorista, refreshSession } = useAuth();
+    const { user, logout, isMotorista, refreshSession, switchGroup } = useAuth();
+    const [showGroupSwitcher, setShowGroupSwitcher] = useState(false);
 
     // Determinar se é admin: prop OU usuário logado como motorista
     const canEdit = isAdmin || isMotorista;
@@ -344,14 +345,46 @@ export default function Dashboard({ isAdmin = false }) {
         ? ['inicio', 'viagens', 'membros', 'config', 'grupos']
         : ['inicio', 'viagens', 'membros', 'grupos'];
 
+    // Grupos do usuário (para o switcher)
+    const userGroups = user?.memberships?.filter(m => m.status_aprovacao === 'aprovado' && m.grupos) || [];
+    const hasMultipleGroups = userGroups.length > 1;
+
+    const handleSwitchGroup = async (membership) => {
+        setShowGroupSwitcher(false);
+        await switchGroup(membership.grupo_id);
+        const path = membership.is_motorista
+            ? `/admin/${membership.grupo_id}`
+            : `/g/${membership.grupo_id}`;
+        navigate(path);
+    };
+
     return (
         <div className="container">
             {/* Header */}
             <header className="header">
-                <div>
-                    <h1 className="header-title">
+                <div style={{ position: 'relative' }}>
+                    <h1 className="header-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                         <span className="icon">🚗</span>
                         {grupo.nome}
+                        {/* Group switcher button */}
+                        {user && hasMultipleGroups && (
+                            <button
+                                onClick={() => setShowGroupSwitcher(!showGroupSwitcher)}
+                                style={{
+                                    background: 'var(--bg-secondary)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    padding: '2px 8px',
+                                    cursor: 'pointer',
+                                    fontSize: 'var(--font-size-sm)',
+                                    color: 'var(--text-secondary)',
+                                    marginLeft: 'var(--space-1)'
+                                }}
+                                title="Trocar de grupo"
+                            >
+                                ▼
+                            </button>
+                        )}
                     </h1>
                     <p className="header-subtitle">
                         {membros.length} membro{membros.length !== 1 ? 's' : ''} •
@@ -360,6 +393,60 @@ export default function Dashboard({ isAdmin = false }) {
                             : ` R$${parseFloat(grupo.valor_semanal).toFixed(2)}/semana`
                         }
                     </p>
+
+                    {/* Group switcher dropdown */}
+                    {showGroupSwitcher && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            background: 'var(--bg-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 'var(--radius-md)',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                            zIndex: 100,
+                            minWidth: '250px',
+                            marginTop: 'var(--space-2)',
+                            overflow: 'hidden'
+                        }}>
+                            <div style={{ padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--border-color)', fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                TROCAR DE GRUPO
+                            </div>
+                            {userGroups.map(m => (
+                                <button
+                                    key={m.id}
+                                    onClick={() => handleSwitchGroup(m)}
+                                    style={{
+                                        width: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: 'var(--space-3)',
+                                        background: m.grupo_id === grupoId ? 'var(--bg-secondary)' : 'transparent',
+                                        border: 'none',
+                                        borderBottom: '1px solid var(--border-color)',
+                                        cursor: m.grupo_id === grupoId ? 'default' : 'pointer',
+                                        textAlign: 'left',
+                                        fontSize: 'var(--font-size-sm)'
+                                    }}
+                                >
+                                    <span style={{ fontWeight: m.grupo_id === grupoId ? 600 : 400, color: 'var(--text-primary)' }}>
+                                        {m.grupo_id === grupoId ? '● ' : ''}{m.grupos?.nome || 'Grupo'}
+                                    </span>
+                                    <span style={{
+                                        padding: '2px 8px',
+                                        borderRadius: 'var(--radius-sm)',
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 600,
+                                        background: m.is_motorista ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
+                                        color: m.is_motorista ? 'var(--info, #004085)' : 'var(--success, #155724)'
+                                    }}>
+                                        {m.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* User info & logout */}
@@ -450,7 +537,7 @@ export default function Dashboard({ isAdmin = false }) {
                         {tab === 'viagens' && '📅 Viagens'}
                         {tab === 'membros' && '👥 Membros'}
                         {tab === 'config' && '⚙️ Config'}
-                        {tab === 'grupos' && '🔍 Grupos'}
+                        {tab === 'grupos' && '📋 Meus Grupos'}
                     </button>
                 ))}
             </div>
@@ -1022,10 +1109,56 @@ export default function Dashboard({ isAdmin = false }) {
                     </button>
                 </div>
             )}
-            {/* Tab: Grupos Disponíveis */}
+            {/* Tab: Meus Grupos + Disponíveis */}
             {activeTab === 'grupos' && (
                 <div>
-                    <h3 style={{ marginBottom: 'var(--space-3)' }}>🔍 Grupos Disponíveis</h3>
+                    {/* Meus Grupos */}
+                    {user && userGroups.length > 0 && (
+                        <>
+                            <h3 style={{ marginBottom: 'var(--space-3)' }}>📋 Meus Grupos</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-6)' }}>
+                                {userGroups.map(m => (
+                                    <div
+                                        key={m.id}
+                                        onClick={() => handleSwitchGroup(m)}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            padding: 'var(--space-3) var(--space-4)',
+                                            background: m.grupo_id === grupoId ? 'var(--bg-secondary)' : 'var(--bg-primary)',
+                                            border: m.grupo_id === grupoId ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                                            borderRadius: 'var(--radius-md)',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                                                {m.grupo_id === grupoId ? '● ' : ''}{m.grupos?.nome || 'Grupo'}
+                                            </div>
+                                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>
+                                                {m.grupo_id === grupoId ? 'Grupo atual' : 'Clique para acessar'}
+                                            </div>
+                                        </div>
+                                        <span style={{
+                                            padding: '4px 10px',
+                                            borderRadius: 'var(--radius-sm)',
+                                            fontSize: 'var(--font-size-xs)',
+                                            fontWeight: 600,
+                                            background: m.is_motorista ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
+                                            color: m.is_motorista ? 'var(--info, #004085)' : 'var(--success, #155724)'
+                                        }}>
+                                            {m.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                    {/* Grupos Disponíveis */}
+                    <h3 style={{ marginBottom: 'var(--space-3)' }}>🔍 Outros Grupos Disponíveis</h3>
                     <p style={{ marginBottom: 'var(--space-4)', color: 'var(--text-secondary)' }}>
                         Você pode participar de vários grupos como passageiro, mas apenas um como motorista.
                     </p>
