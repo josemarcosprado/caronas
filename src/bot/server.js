@@ -346,7 +346,7 @@ app.post('/webhook', async (req, res) => {
 
         switch (intent.action) {
             case 'confirmar':
-                resposta = await confirmarPresenca(membro.id, membro.grupo_id, intent.dias);
+                resposta = await confirmarPresenca(membro.id, membro.grupo_id, intent.dias, ['ida'], membro.is_motorista);
                 break;
 
             case 'cancelar':
