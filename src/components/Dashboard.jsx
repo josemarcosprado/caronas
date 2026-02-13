@@ -250,6 +250,22 @@ export default function Dashboard({ isAdmin = false }) {
 
             if (error) throw error;
 
+            // Verificar se o grupo ficou vazio
+            const { count } = await supabase
+                .from('membros')
+                .select('*', { count: 'exact', head: true })
+                .eq('grupo_id', grupoId)
+                .eq('ativo', true);
+
+            if (count === 0) {
+                // Grupo vazio — deletar automaticamente
+                await supabase
+                    .from('grupos')
+                    .delete()
+                    .eq('id', grupoId);
+                console.log('Grupo vazio deletado automaticamente');
+            }
+
             await refreshSession();
             navigate('/');
         } catch (err) {
@@ -1129,6 +1145,40 @@ export default function Dashboard({ isAdmin = false }) {
                                 {savingProfile ? 'Salvando...' : '💾 Salvar Alterações'}
                             </button>
                         </form>
+                    </div>
+
+                    {/* Zona de perigo — disponível para todos */}
+                    <div className="card" style={{ marginTop: 'var(--space-4)', borderLeft: '4px solid var(--error, #dc3545)' }}>
+                        <h4 style={{ color: 'var(--error, #dc3545)', marginBottom: 'var(--space-2)' }}>⚠️ Zona de Perigo</h4>
+                        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>
+                            Ações irreversíveis. Tenha cuidado.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                            <button
+                                className="btn"
+                                style={{
+                                    background: 'var(--error)',
+                                    color: 'white',
+                                    opacity: 0.8
+                                }}
+                                onClick={sairDoGrupo}
+                            >
+                                🚪 Sair do Grupo
+                            </button>
+                            <button
+                                className="btn"
+                                style={{
+                                    background: 'transparent',
+                                    color: 'var(--error)',
+                                    border: '1px solid var(--error)',
+                                    opacity: 0.7,
+                                    fontSize: 'var(--font-size-sm)'
+                                }}
+                                onClick={deletarConta}
+                            >
+                                🗑️ Excluir Minha Conta
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
