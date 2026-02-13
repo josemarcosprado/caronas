@@ -250,6 +250,22 @@ export default function Dashboard({ isAdmin = false }) {
 
             if (error) throw error;
 
+            // Verificar se o grupo ficou vazio
+            const { count } = await supabase
+                .from('membros')
+                .select('*', { count: 'exact', head: true })
+                .eq('grupo_id', grupoId)
+                .eq('ativo', true);
+
+            if (count === 0) {
+                // Grupo vazio — deletar automaticamente
+                await supabase
+                    .from('grupos')
+                    .delete()
+                    .eq('id', grupoId);
+                console.log('Grupo vazio deletado automaticamente');
+            }
+
             await refreshSession();
             navigate('/');
         } catch (err) {
