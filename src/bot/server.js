@@ -26,8 +26,18 @@ import {
     renovarInviteLink,
     promoverParaAdmin
 } from './evolutionApi.js';
-import { supabase } from '../lib/supabase.js';
+import { createClient } from '@supabase/supabase-js';
 import { getPhoneLookupFormats } from '../lib/phoneUtils.js';
+
+// Inicializar Supabase com Service Role Key para ter permissões de admin (ignorar RLS)
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error('Supabase URL ou Service Role Key não configurados no .env');
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const app = express();
 app.use(express.json());
