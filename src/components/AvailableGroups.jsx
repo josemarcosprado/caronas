@@ -18,13 +18,34 @@ export default function AvailableGroups() {
         try {
             setLoading(true);
             setError(null);
-            // Buscar apenas grupos por enquanto para debug
-            const { data, error: fetchError } = await supabase
+
+            // Buscar grupos
+            const { data: gruposData, error: fetchError } = await supabase
                 .from('grupos')
                 .select('*');
 
             if (fetchError) throw fetchError;
-            setGroups(data || []);
+
+            // Buscar contagem de membros ativos e aprovados por grupo
+            const { data: membrosData } = await supabase
+                .from('membros')
+                .select('grupo_id')
+                .eq('ativo', true)
+                .eq('status_aprovacao', 'aprovado');
+
+            // Contar membros por grupo
+            const contagem = {};
+            (membrosData || []).forEach(m => {
+                contagem[m.grupo_id] = (contagem[m.grupo_id] || 0) + 1;
+            });
+
+            // Adicionar contagem aos grupos
+            const gruposComContagem = (gruposData || []).map(g => ({
+                ...g,
+                membrosCount: contagem[g.id] || 0
+            }));
+
+            setGroups(gruposComContagem);
         } catch (err) {
             console.error('Erro ao carregar grupos:', err);
             setError('Não foi possível carregar os grupos disponíveis.');
@@ -91,7 +112,7 @@ export default function AvailableGroups() {
                                     : `R$ ${parseFloat(group.valor_semanal).toFixed(2)} / semana`}
                             </div>
                             <div style={{ marginBottom: '4px' }}>
-                                👥 {group.membros?.[0]?.count || 0} membros
+                                👥 {group.membrosCount} membro{group.membrosCount !== 1 ? 's' : ''}
                             </div>
                             <div>
                                 🕐 {group.horario_ida?.slice(0, 5)} - {group.horario_volta?.slice(0, 5)}
