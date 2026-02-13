@@ -71,8 +71,6 @@ export default function JoinGroup() {
                 .insert({
                     grupo_id: grupoId,
                     usuario_id: user.id,
-                    nome: user.nome,
-                    telefone: user.telefone,
                     is_motorista: false,
                     ativo: true,
                     dias_padrao: ['seg', 'ter', 'qua', 'qui', 'sex'],

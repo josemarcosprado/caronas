@@ -64,27 +64,42 @@ export default function Dashboard({ isAdmin = false }) {
                 tempo_limite_cancelamento: grupoData.tempo_limite_cancelamento || 30
             });
 
-            // Buscar membros aprovados
+            // Buscar membros aprovados (JOIN com usuarios para nome/telefone)
             const { data: membrosData } = await supabase
                 .from('membros')
-                .select('*')
+                .select('*, usuarios(nome, telefone, matricula, cnh_url)')
                 .eq('grupo_id', grupoId)
                 .eq('ativo', true)
                 .eq('status_aprovacao', 'aprovado')
                 .order('is_motorista', { ascending: false });
 
-            setMembros(membrosData || []);
+            // Achatar dados de identidade do usuarios no membro
+            const membrosFlat = (membrosData || []).map(m => ({
+                ...m,
+                nome: m.usuarios?.nome || 'Sem nome',
+                telefone: m.usuarios?.telefone,
+                matricula: m.usuarios?.matricula,
+                cnh_url: m.usuarios?.cnh_url
+            }));
+            setMembros(membrosFlat);
 
             // Buscar membros pendentes de aprovação (apenas para motoristas)
             if (canEdit) {
                 const { data: pendentesData } = await supabase
                     .from('membros')
-                    .select('*')
+                    .select('*, usuarios(nome, telefone, matricula, cnh_url)')
                     .eq('grupo_id', grupoId)
                     .eq('status_aprovacao', 'pendente')
                     .order('created_at', { ascending: true });
 
-                setPendentes(pendentesData || []);
+                const pendentesFlat = (pendentesData || []).map(m => ({
+                    ...m,
+                    nome: m.usuarios?.nome || 'Sem nome',
+                    telefone: m.usuarios?.telefone,
+                    matricula: m.usuarios?.matricula,
+                    cnh_url: m.usuarios?.cnh_url
+                }));
+                setPendentes(pendentesFlat);
             }
 
             // Buscar viagens da semana

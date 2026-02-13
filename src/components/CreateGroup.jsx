@@ -117,8 +117,6 @@ function CreateGroup() {
                 .insert({
                     grupo_id: grupo.id,
                     usuario_id: user.id,
-                    nome: user.nome,
-                    telefone: user.telefone,
                     is_motorista: true,
                     ativo: true,
                     dias_padrao: ['seg', 'ter', 'qua', 'qui', 'sex'],
