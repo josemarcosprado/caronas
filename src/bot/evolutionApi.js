@@ -41,16 +41,19 @@ async function evolutionFetch(path, options = {}) {
  * @param {string} texto - Texto da mensagem
  */
 export async function enviarMensagem(numero, texto) {
+    console.log(`📤 Tentando enviar mensagem para ${numero}:`, texto.substring(0, 50) + '...');
     try {
-        await evolutionFetch('/message/sendText', {
+        const result = await evolutionFetch('/message/sendText', {
             method: 'POST',
             body: JSON.stringify({
                 number: numero,
                 text: texto
             })
         });
+        console.log(`✅ Mensagem enviada com sucesso para ${numero}:`, JSON.stringify(result));
     } catch (error) {
-        console.error('❌ Erro ao enviar mensagem:', error.message);
+        console.error(`❌ Erro ao enviar mensagem para ${numero}:`, error.message);
+        console.error('Stack:', error.stack);
     }
 }
 

@@ -666,8 +666,10 @@ app.get('/api/invite-link/:grupoId', async (req, res) => {
  * Gera código, salva no banco e envia por WhatsApp
  */
 app.post('/api/auth/request-reset', async (req, res) => {
+    console.log(`🔑 Recebendo solicitação de reset de senha.`);
     try {
         const { telefone } = req.body;
+        console.log(`📱 Telefone recebido: ${telefone}`);
 
         if (!telefone) {
             return res.status(400).json({ error: 'Telefone é obrigatório' });
@@ -675,6 +677,7 @@ app.post('/api/auth/request-reset', async (req, res) => {
 
         // Normalizar telefone (apenas números)
         const telefoneNumeros = telefone.replace(/\D/g, '');
+        console.log(`🔢 Telefone normalizado: ${telefoneNumeros}`);
 
         // Validar se usuário existe
         // Tentar encontrar variantes (com ou sem 55)
@@ -686,6 +689,8 @@ app.post('/api/auth/request-reset', async (req, res) => {
             variantes.push(telefoneNumeros.substring(2));
         }
 
+        console.log(`🔍 Buscando usuário com variantes: ${variantes.join(', ')}`);
+
         const { data: usuario, error: userError } = await supabase
             .from('usuarios')
             .select('id, telefone, nome')
@@ -696,8 +701,11 @@ app.post('/api/auth/request-reset', async (req, res) => {
         if (userError || !usuario) {
             // Por segurança, não revelar que usuário não existe, mas logar
             console.log(`⚠️ Tentativa de reset para telefone não cadastrado: ${telefoneNumeros}`);
+            if (userError) console.error(`Erro Supabase: ${userError.message}`);
             return res.json({ success: true, message: 'Se o telefone estiver cadastrado, você receberá um código.' });
         }
+
+        console.log(`👤 Usuário encontrado: ${usuario.nome} (${usuario.telefone})`);
 
         // Gerar código de 6 dígitos
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
@@ -727,10 +735,13 @@ app.post('/api/auth/request-reset', async (req, res) => {
             throw new Error(`Erro no banco de dados: ${insertError.message || insertError.details || 'Desconhecido'}`);
         }
 
+        console.log(`💾 Código salvo no banco. Expirando em: ${expiresAt.toISOString()}`);
+
         // Enviar por WhatsApp
         const whatsappId = `${usuario.telefone}@s.whatsapp.net`;
         const mensagem = `🔐 *Cajurona: Redefinição de Senha*\n\nOlá, ${usuario.nome}!\n\nSeu código de verificação é: *${codigo}*\n\nEle é válido por 15 minutos. Se você não solicitou isso, ignore esta mensagem.`;
 
+        console.log(`🚀 Enviando mensagem WhatsApp para: ${whatsappId}`);
         await enviarMensagem(whatsappId, mensagem, false);
 
         console.log(`✅ Código de reset enviado para ${usuario.nome} (${usuario.telefone})`);
