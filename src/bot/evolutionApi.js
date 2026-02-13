@@ -109,7 +109,7 @@ export async function criarGrupoWhatsApp(nomeGrupo, participantes = []) {
 export async function buscarInviteLink(groupJid) {
     try {
         const response = await fetch(
-            `${EVOLUTION_API_URL}/group/invite-code/${EVOLUTION_INSTANCE}?groupJid=${encodeURIComponent(groupJid)}`,
+            `${EVOLUTION_API_URL}/group/inviteCode/${EVOLUTION_INSTANCE}?groupJid=${encodeURIComponent(groupJid)}`,
             {
                 method: 'GET',
                 headers: {
@@ -179,7 +179,7 @@ export async function renovarInviteLink(groupJid) {
     try {
         // Revogar o código atual
         const response = await fetch(
-            `${EVOLUTION_API_URL}/group/revoke-invite-code/${EVOLUTION_INSTANCE}?groupJid=${encodeURIComponent(groupJid)}`,
+            `${EVOLUTION_API_URL}/group/revokeInviteCode/${EVOLUTION_INSTANCE}?groupJid=${encodeURIComponent(groupJid)}`,
             {
                 method: 'PUT',
                 headers: {

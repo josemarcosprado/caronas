@@ -102,6 +102,12 @@ function isGroupAllowed(remoteJid) {
  * @param {boolean} [checkDuplicate=true] - Se deve verificar duplicatas
  */
 async function enviarMensagem(numero, texto, checkDuplicate = true) {
+    // Evitar enviar para LIDs (causa erro 400)
+    if (numero && numero.includes('@lid')) {
+        console.warn(`⚠️ Tentativa de envio para LID bloqueada: ${numero}`);
+        return;
+    }
+
     // Evitar mensagens duplicadas (exceto para respostas importantes)
     if (checkDuplicate && isDuplicateMessage(numero, texto)) {
         return;
