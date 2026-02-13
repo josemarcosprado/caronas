@@ -69,6 +69,7 @@ export default function Dashboard({ isAdmin = false }) {
             const { data: membrosData } = await supabase
                 .from('membros')
                 .select('*, usuarios(nome, telefone, matricula, cnh_url)')
+
                 .eq('grupo_id', grupoId)
                 .eq('ativo', true)
                 .eq('status_aprovacao', 'aprovado')
@@ -89,6 +90,7 @@ export default function Dashboard({ isAdmin = false }) {
                 const { data: pendentesData } = await supabase
                     .from('membros')
                     .select('*, usuarios(nome, telefone, matricula, cnh_url)')
+
                     .eq('grupo_id', grupoId)
                     .eq('status_aprovacao', 'pendente')
                     .order('created_at', { ascending: true });
@@ -575,7 +577,7 @@ export default function Dashboard({ isAdmin = false }) {
                                     }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-2)' }}>
                                             <div>
-                                                <strong>{membro.nome}</strong>
+                                                <strong>{membro.usuarios?.nome}</strong>
                                                 <span style={{
                                                     marginLeft: 'var(--space-2)',
                                                     padding: '2px 8px',
@@ -588,30 +590,30 @@ export default function Dashboard({ isAdmin = false }) {
                                                     {membro.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
                                                 </span>
                                                 <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', margin: 'var(--space-1) 0 0 0' }}>
-                                                    📱 {membro.telefone}
+                                                    📱 {membro.usuarios?.telefone}
                                                 </p>
                                             </div>
                                         </div>
 
                                         {/* Documentos */}
                                         <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
-                                            {membro.is_motorista && membro.cnh_url && (
+                                            {membro.is_motorista && membro.usuarios?.cnh_url && (
                                                 <div>
                                                     <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🪪 CNH:</p>
                                                     <img
-                                                        src={membro.cnh_url}
-                                                        alt={`CNH de ${membro.nome}`}
+                                                        src={membro.usuarios.cnh_url}
+                                                        alt={`CNH de ${membro.usuarios.nome}`}
                                                         onClick={() => setImagemExpandida(membro.cnh_url)}
                                                         style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
                                                     />
                                                 </div>
                                             )}
-                                            {membro.carteirinha_url && (
+                                            {membro.usuarios?.carteirinha_url && (
                                                 <div>
                                                     <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-1)' }}>🎓 Carteirinha:</p>
                                                     <img
-                                                        src={membro.carteirinha_url}
-                                                        alt={`Carteirinha de ${membro.nome}`}
+                                                        src={membro.usuarios.carteirinha_url}
+                                                        alt={`Carteirinha de ${membro.usuarios.nome}`}
                                                         onClick={() => setImagemExpandida(membro.carteirinha_url)}
                                                         style={{ maxWidth: '150px', maxHeight: '100px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', cursor: 'pointer', objectFit: 'contain' }}
                                                     />
@@ -862,10 +864,10 @@ export default function Dashboard({ isAdmin = false }) {
                                             borderRadius: 'var(--radius-sm)'
                                         }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                {membro.carteirinha_url ? (
-                                                    <a href={membro.carteirinha_url} target="_blank" rel="noopener noreferrer">
+                                                {membro.usuarios?.carteirinha_url ? (
+                                                    <a href={membro.usuarios.carteirinha_url} target="_blank" rel="noopener noreferrer">
                                                         <img
-                                                            src={membro.carteirinha_url}
+                                                            src={membro.usuarios.carteirinha_url}
                                                             alt="Carteirinha"
                                                             style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border-color)' }}
                                                         />
@@ -876,8 +878,8 @@ export default function Dashboard({ isAdmin = false }) {
                                                     </div>
                                                 )}
                                                 <div>
-                                                    <strong>{membro.nome}</strong>
-                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.telefone)}</div>
+                                                    <strong>{membro.usuarios?.nome}</strong>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.usuarios?.telefone)}</div>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -909,12 +911,12 @@ export default function Dashboard({ isAdmin = false }) {
                         {membros.map(membro => (
                             <div key={membro.id} className="member-item">
                                 <div className={`member-avatar ${membro.is_motorista ? 'driver' : ''}`}>
-                                    {membro.nome?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
+                                    {membro.usuarios?.nome?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
                                 </div>
                                 <div className="member-info">
-                                    <div className="member-name">{membro.nome}</div>
+                                    <div className="member-name">{membro.usuarios?.nome}</div>
                                     <div className="member-status">
-                                        📱 {membro.telefone}
+                                        📱 {membro.usuarios?.telefone}
                                     </div>
                                 </div>
                                 {membro.is_motorista && (
