@@ -31,7 +31,21 @@ if (!supabaseUrl || !supabaseServiceKey) {
     throw new Error('Supabase URL ou Service Role Key não configurados no .env');
 }
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    realtime: {
+        params: {
+            eventsPerSecond: 10,
+        },
+        heartbeatIntervalMs: 15000,
+        timeout: 30000,
+        reconnectAfterMs: (tries) => {
+            // Reconnect strategy: 1s, 2s, 4s, 8s, max 30s
+            const delay = Math.min(1000 * Math.pow(2, tries), 30000);
+            console.log(`🔄 Realtime reconnect attempt ${tries + 1}, waiting ${delay}ms...`);
+            return delay;
+        },
+    },
+});
 
 const app = express();
 app.use(express.json());
@@ -868,6 +882,14 @@ app.post('/test', async (req, res) => {
  */
 function iniciarListenerCodigosVerificacao() {
     console.log('👂 Iniciando listener de códigos de verificação...');
+    console.log(`🔧 Supabase URL: ${supabaseUrl}`);
+    console.log(`🔧 Service key (primeiros 20 chars): ${supabaseServiceKey?.substring(0, 20)}...`);
+    console.log(`🔧 Realtime endpoint: ${supabaseUrl}/realtime/v1`);
+
+    // Log Realtime connection state
+    const realtimeClient = supabase.realtime;
+    console.log(`🔧 Realtime client state: ${realtimeClient?.connectionState?.() || 'unknown'}`);
+    console.log(`🔧 Realtime client accessToken present: ${!!realtimeClient?.accessToken}`);
 
     const channel = supabase
         .channel('codigos_verificacao_inserts')
@@ -880,7 +902,9 @@ function iniciarListenerCodigosVerificacao() {
             },
             async (payload) => {
                 const { new: registro } = payload;
-                console.log(`🔔 Novo código de verificação detectado para telefone: ${registro.telefone}`);
+                console.log(`🔔 [REALTIME] Novo código de verificação detectado!`);
+                console.log(`🔔 [REALTIME] Payload completo:`, JSON.stringify(payload, null, 2));
+                console.log(`🔔 [REALTIME] Telefone: ${registro.telefone}, Código: ${registro.codigo}`);
 
                 try {
                     // Buscar nome do usuário
@@ -896,20 +920,69 @@ function iniciarListenerCodigosVerificacao() {
                     const whatsappId = `${registro.telefone}@s.whatsapp.net`;
                     const mensagem = `🔐 *Cajurona: Redefinição de Senha*\n\nOlá, ${nome}!\n\nSeu código de verificação é: *${registro.codigo}*\n\nEle é válido por 15 minutos. Se você não solicitou isso, ignore esta mensagem.`;
 
-                    console.log(`🚀 Enviando código por WhatsApp para: ${whatsappId}`);
+                    console.log(`🚀 [REALTIME] Enviando código por WhatsApp para: ${whatsappId}`);
 
                     // Enviar por WhatsApp (sem verificação de duplicatas)
                     await enviarMensagem(whatsappId, mensagem, false);
 
-                    console.log(`✅ Código de reset enviado por WhatsApp para ${nome} (${registro.telefone})`);
+                    console.log(`✅ [REALTIME] Código de reset enviado por WhatsApp para ${nome} (${registro.telefone})`);
                 } catch (error) {
-                    console.error(`❌ Erro ao enviar código por WhatsApp para ${registro.telefone}:`, error.message);
+                    console.error(`❌ [REALTIME] Erro ao enviar código por WhatsApp para ${registro.telefone}:`, error.message);
                 }
             }
         )
-        .subscribe((status) => {
-            console.log(`📡 Status do listener codigos_verificacao: ${status}`);
+        .subscribe((status, err) => {
+            const timestamp = new Date().toISOString();
+            console.log(`📡 [REALTIME] [${timestamp}] Status do listener codigos_verificacao: ${status}`);
+
+            if (err) {
+                console.error(`❌ [REALTIME] [${timestamp}] Erro no subscribe:`, err);
+                console.error(`❌ [REALTIME] Erro detalhado:`, JSON.stringify(err, null, 2));
+            }
+
+            switch (status) {
+                case 'SUBSCRIBED':
+                    console.log(`✅ [REALTIME] Conectado com sucesso! Escutando inserts em codigos_verificacao.`);
+                    break;
+                case 'TIMED_OUT':
+                    console.error(`⏰ [REALTIME] TIMEOUT ao conectar ao Realtime!`);
+                    console.error(`⏰ [REALTIME] Isso pode indicar:`);
+                    console.error(`   1. Problema de rede/firewall (WebSocket bloqueado)`);
+                    console.error(`   2. A tabela 'codigos_verificacao' não está na publicação supabase_realtime`);
+                    console.error(`   3. O Realtime não está habilitado no projeto Supabase`);
+                    console.error(`⏰ [REALTIME] Tentando reconectar em 5 segundos...`);
+                    setTimeout(() => {
+                        console.log(`🔄 [REALTIME] Reconnecting...`);
+                        channel.unsubscribe().then(() => {
+                            channel.subscribe();
+                        });
+                    }, 5000);
+                    break;
+                case 'CHANNEL_ERROR':
+                    console.error(`💥 [REALTIME] Erro no canal!`);
+                    if (err) console.error(`💥 [REALTIME] Detalhes:`, err.message || err);
+                    break;
+                case 'CLOSED':
+                    console.warn(`🔒 [REALTIME] Canal fechado.`);
+                    break;
+                default:
+                    console.log(`❓ [REALTIME] Status desconhecido: ${status}`);
+            }
         });
+
+    // Monitor periódico do estado do canal (a cada 30 segundos, por 5 minutos)
+    let monitorCount = 0;
+    const monitorInterval = setInterval(() => {
+        monitorCount++;
+        const state = channel.state;
+        console.log(`🔍 [REALTIME MONITOR] Canal state: ${state} (check #${monitorCount})`);
+
+        // Parar monitor após 10 checks (5 minutos)
+        if (monitorCount >= 10) {
+            clearInterval(monitorInterval);
+            console.log(`🔍 [REALTIME MONITOR] Monitor encerrado. Estado final: ${state}`);
+        }
+    }, 30000);
 
     return channel;
 }
