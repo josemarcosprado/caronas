@@ -229,6 +229,14 @@ export default function Dashboard({ isAdmin = false }) {
         if (!confirm('ÚLTIMA CONFIRMAÇÃO: Excluir o grupo "' + grupo?.nome + '" permanentemente?')) return;
 
         try {
+            // Deletar membros do grupo primeiro (FK bloqueia delete do grupo)
+            const { error: membrosError } = await supabase
+                .from('membros')
+                .delete()
+                .eq('grupo_id', grupoId);
+
+            if (membrosError) throw membrosError;
+
             const { error } = await supabase
                 .from('grupos')
                 .delete()
