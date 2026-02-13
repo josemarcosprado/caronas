@@ -41,7 +41,8 @@ export default function Dashboard({ isAdmin = false }) {
     const [perfilEdit, setPerfilEdit] = useState({
         nome: user?.nome || '',
         telefone: user?.telefone || '',
-        matricula: user?.matricula || ''
+        matricula: user?.matricula || '',
+        bairro: user?.bairro || ''
     });
     const [savingProfile, setSavingProfile] = useState(false);
 
@@ -51,7 +52,8 @@ export default function Dashboard({ isAdmin = false }) {
             setPerfilEdit({
                 nome: user.nome || '',
                 telefone: user.telefone || '',
-                matricula: user.matricula || ''
+                matricula: user.matricula || '',
+                bairro: user.bairro || ''
             });
         }
     }, [user]);
@@ -88,7 +90,7 @@ export default function Dashboard({ isAdmin = false }) {
             // Buscar membros aprovados (JOIN com usuarios para nome/telefone)
             const { data: membrosData, error: membrosError } = await supabase
                 .from('membros')
-                .select('*, usuarios(nome, telefone, matricula, cnh_url)')
+                .select('*, usuarios(nome, telefone, matricula, cnh_url, bairro)')
                 .eq('grupo_id', grupoId)
                 .eq('ativo', true)
                 .eq('status_aprovacao', 'aprovado')
@@ -112,7 +114,7 @@ export default function Dashboard({ isAdmin = false }) {
             if (canEdit) {
                 const { data: pendentesData } = await supabase
                     .from('membros')
-                    .select('*, usuarios(nome, telefone, matricula, cnh_url)')
+                    .select('*, usuarios(nome, telefone, matricula, cnh_url, bairro)')
 
                     .eq('grupo_id', grupoId)
                     .eq('status_aprovacao', 'pendente')
@@ -350,11 +352,28 @@ export default function Dashboard({ isAdmin = false }) {
                 .update({
                     nome: perfilEdit.nome,
                     telefone: perfilEdit.telefone,
-                    matricula: perfilEdit.matricula
+                    matricula: perfilEdit.matricula,
+                    bairro: perfilEdit.bairro.trim().toLowerCase()
                 })
                 .eq('id', user.id);
 
             if (error) throw error;
+
+            // Se o bairro mudou, marcar flag 'bairro_mudou' no membro
+            if (user.bairro !== perfilEdit.bairro.trim().toLowerCase() && user.membroId) {
+                await supabase
+                    .from('membros')
+                    .update({ bairro_mudou: true })
+                    .eq('id', user.membroId);
+            }
+
+            // Se o bairro mudou, marcar flag 'bairro_mudou' no membro
+            if (user.bairro !== perfilEdit.bairro.trim().toLowerCase() && user.membroId) {
+                await supabase
+                    .from('membros')
+                    .update({ bairro_mudou: true })
+                    .eq('id', user.membroId);
+            }
 
             // Recarregar sessão para atualizar dados no contexto
             await refreshSession();
@@ -749,6 +768,97 @@ export default function Dashboard({ isAdmin = false }) {
             {/* Tab: Início */}
             {activeTab === 'inicio' && (
                 <div>
+                    {/* Notificação de Mudança de Bairro (apenas motoristas) */}
+                    {canEdit && membros.some(m => m.bairro_mudou) && (
+
+                        <div style={{
+                            background: 'rgba(30, 64, 175, 0.15)', // Azul escuro com transparência
+                            border: '1px solid rgba(59, 130, 246, 0.3)', // Borda azul sutil
+                            borderRadius: 'var(--radius-md)',
+                            padding: 'var(--space-4)',
+                            marginBottom: 'var(--space-4)'
+                        }}>
+                            <h3 style={{
+                                margin: '0 0 var(--space-3) 0',
+                                fontSize: 'var(--font-size-lg)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                color: '#60a5fa' // Azul claro para o título (destaque em fundo escuro)
+                            }}>
+                                📍 Mudança de Bairro
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                {membros.filter(m => m.bairro_mudou).map(membro => (
+                                    <div key={membro.id} style={{
+                                        background: 'var(--bg-secondary)', // Fundo do card padrão do tema
+                                        borderRadius: 'var(--radius-md)',
+                                        padding: 'var(--space-3)',
+                                        border: '1px solid var(--border-color)'
+                                    }}>
+                                        <div style={{ marginBottom: 'var(--space-2)' }}>
+                                            <strong style={{ color: 'var(--text-primary)' }}>{membro.usuarios?.nome}</strong>
+                                            <span style={{ color: 'var(--text-secondary)' }}> mudou de bairro.</span>
+                                            <div style={{
+                                                marginTop: 'var(--space-2)',
+                                                background: 'rgba(0, 0, 0, 0.2)',
+                                                padding: '8px',
+                                                borderRadius: 'var(--radius-sm)'
+                                            }}>
+                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Novo local: </span>
+                                                <strong style={{ color: '#60a5fa', fontSize: '1rem' }}>
+                                                    {membro.usuarios?.bairro || 'Não informado'}
+                                                </strong>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                                            <button
+                                                className="btn btn-primary"
+                                                style={{ flex: 1, fontSize: 'var(--font-size-sm)' }}
+                                                onClick={async () => {
+                                                    // Aprovar mudança (limpar flag)
+                                                    const { error } = await supabase
+                                                        .from('membros')
+                                                        .update({ bairro_mudou: false })
+                                                        .eq('id', membro.id);
+
+                                                    if (error) {
+                                                        alert('Erro ao confirmar: ' + error.message);
+                                                    } else {
+                                                        loadData();
+                                                    }
+                                                }}
+                                            >
+                                                ✅ Aceitar
+                                            </button>
+                                            <button
+                                                className="btn"
+                                                style={{ flex: 1, background: 'var(--error)', color: 'white', fontSize: 'var(--font-size-sm)' }}
+                                                onClick={async () => {
+                                                    // Rejeitar (remover do grupo)
+                                                    if (!confirm(`Remover ${membro.usuarios?.nome} do grupo?`)) return;
+
+                                                    const { error } = await supabase
+                                                        .from('membros')
+                                                        .delete()
+                                                        .eq('id', membro.id);
+
+                                                    if (error) {
+                                                        alert('Erro ao remover: ' + error.message);
+                                                    } else {
+                                                        loadData();
+                                                    }
+                                                }}
+                                            >
+                                                ❌ Remover do Grupo
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Solicitações Pendentes — apenas motoristas */}
                     {canEdit && pendentes.length > 0 && (
                         <div style={{
@@ -785,6 +895,9 @@ export default function Dashboard({ isAdmin = false }) {
                                                 </span>
                                                 <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', margin: 'var(--space-1) 0 0 0' }}>
                                                     📱 {membro.telefone || 'Telefone não disponível'}
+                                                </p>
+                                                <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', margin: 'var(--space-1) 0 0 0' }}>
+                                                    📍 {membro.usuarios?.bairro || 'Bairro não informado'}
                                                 </p>
                                             </div>
                                         </div>
@@ -1137,6 +1250,32 @@ export default function Dashboard({ isAdmin = false }) {
                                 )}
                             </div>
 
+                            <div className="form-group">
+                                <label className="form-label">Bairro</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    value={perfilEdit.bairro}
+                                    onChange={e => setPerfilEdit({ ...perfilEdit, bairro: e.target.value })}
+                                    placeholder="Ex: Centro, Jabotiana, Luzia"
+                                />
+                                <small style={{ color: 'var(--text-muted)' }}>
+                                    Bairro onde você mora ou deseja ser pego na carona.
+                                </small>
+                                {user?.bairro && perfilEdit.bairro.trim().toLowerCase() !== user.bairro && (
+                                    <div style={{
+                                        marginTop: 'var(--space-2)',
+                                        padding: 'var(--space-3)',
+                                        background: 'var(--warning-bg, #fff3cd)',
+                                        color: 'var(--warning, #856404)',
+                                        borderRadius: 'var(--radius-md)',
+                                        fontSize: 'var(--font-size-sm)'
+                                    }}>
+                                        <strong>⚠️ Atenção:</strong> Ao mudar o bairro, o motorista do grupo irá reavaliar sua participação. Caso não aceite o novo bairro, você será removido do grupo.
+                                    </div>
+                                )}
+                            </div>
+
                             <button
                                 type="submit"
                                 className="btn btn-primary"
@@ -1299,6 +1438,11 @@ export default function Dashboard({ isAdmin = false }) {
                                                 <div>
                                                     <strong>{membro.usuarios?.nome}</strong>
                                                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatPhone(membro.usuarios?.telefone)}</div>
+                                                    {membro.usuarios?.bairro && (
+                                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                            📍 {membro.usuarios.bairro}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '8px' }}>

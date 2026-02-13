@@ -21,7 +21,8 @@ export default function Register() {
         telefone: '',
         senha: '',
         confirmarSenha: '',
-        matricula: ''
+        matricula: '',
+        bairro: ''
     });
 
     const handleChange = (e) => {
@@ -77,6 +78,12 @@ export default function Register() {
             return;
         }
 
+        if (!formData.bairro.trim()) {
+            setError('O nome do bairro é obrigatório.');
+            setLoading(false);
+            return;
+        }
+
         try {
             const telefoneNormalizado = phoneValidation.normalized.replace('+', '');
 
@@ -108,6 +115,7 @@ export default function Register() {
                     senha_hash: formData.senha,
                     matricula: formData.matricula.trim(),
                     matricula_status: 'pendente',
+                    bairro: formData.bairro.trim().toLowerCase(),
                     cnh_url: cnhUrl,
                     cnh_status: cnhUrl ? 'pendente' : 'nao_enviada',
                     pode_ser_motorista: false
@@ -219,6 +227,23 @@ export default function Register() {
                         />
                         <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
                             Matrícula da sua instituição de ensino
+                        </small>
+                    </div>
+
+                    {/* Bairro (obrigatório) */}
+                    <div className="form-group">
+                        <label className="form-label">Bairro *</label>
+                        <input
+                            type="text"
+                            name="bairro"
+                            className="form-input"
+                            placeholder="Ex: Centro, Jabotiana, Luzia"
+                            value={formData.bairro}
+                            onChange={handleChange}
+                            required
+                        />
+                        <small style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
+                           Informe o bairro onde você deseja ser pego na carona:
                         </small>
                     </div>
 

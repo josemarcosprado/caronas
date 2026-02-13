@@ -224,6 +224,7 @@ export default function JoinGroup() {
                         <span><strong>👤 Nome:</strong> {user.nome}</span>
                         <span><strong>📱 Telefone:</strong> {user.telefone}</span>
                         <span><strong>🎓 Matrícula:</strong> {user.matricula || 'Não informada'}</span>
+                        <span><strong>📍 Bairro:</strong> {user.bairro || 'Não informado'}</span>
                     </div>
                 </div>
 
