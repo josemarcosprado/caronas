@@ -742,15 +742,16 @@ app.post('/api/auth/request-reset', async (req, res) => {
         const mensagem = `🔐 *Cajurona: Redefinição de Senha*\n\nOlá, ${usuario.nome}!\n\nSeu código de verificação é: *${codigo}*\n\nEle é válido por 15 minutos. Se você não solicitou isso, ignore esta mensagem.`;
 
         console.log(`🚀 Enviando mensagem WhatsApp para: ${whatsappId}`);
+        // Forçar envio (checkDuplicate = false)
         await enviarMensagem(whatsappId, mensagem, false);
 
         console.log(`✅ Código de reset enviado para ${usuario.nome} (${usuario.telefone})`);
 
-        res.json({ success: true, message: 'Código enviado com sucesso.' });
+        return res.status(200).json({ success: true, message: 'Código enviado com sucesso.' });
 
     } catch (error) {
         console.error('❌ Erro no request-reset:', error);
-        res.status(500).json({
+        return res.status(500).json({
             error: error.message || 'Erro ao processar solicitação.',
             details: error.toString()
         });
