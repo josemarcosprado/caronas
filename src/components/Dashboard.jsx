@@ -19,6 +19,7 @@ export default function Dashboard({ isAdmin = false }) {
     const [membros, setMembros] = useState([]);
     const [pendentes, setPendentes] = useState([]);
     const [viagens, setViagens] = useState([]);
+    const [transacoes, setTransacoes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [imagemExpandida, setImagemExpandida] = useState(null);
@@ -122,6 +123,15 @@ export default function Dashboard({ isAdmin = false }) {
                 .order('tipo', { ascending: true });
 
             setViagens(viagensData || []);
+
+            // Buscar transações financeiras do grupo
+            const { data: transacoesData } = await supabase
+                .from('transacoes')
+                .select('*')
+                .eq('grupo_id', grupoId)
+                .order('created_at', { ascending: false });
+
+            setTransacoes(transacoesData || []);
 
         } catch (err) {
             console.error('Erro ao carregar dados:', err);
@@ -348,6 +358,49 @@ export default function Dashboard({ isAdmin = false }) {
     const motorista = membros.find(m => m.is_motorista);
     const shareLink = `${window.location.origin}/g/${grupoId}`;
 
+    // === Cálculos financeiros ===
+    // Membro atual do usuário neste grupo
+    const membroAtual = user ? membros.find(m => m.usuario_id === user.id) : null;
+
+    // Saldo pessoal do passageiro (débitos - pagamentos)
+    const transacoesPessoais = membroAtual
+        ? transacoes.filter(t => t.membro_id === membroAtual.id)
+        : [];
+    const totalDebitoPessoal = transacoesPessoais
+        .filter(t => t.tipo === 'debito')
+        .reduce((sum, t) => sum + parseFloat(t.valor), 0);
+    const totalPagoPessoal = transacoesPessoais
+        .filter(t => t.tipo === 'pagamento')
+        .reduce((sum, t) => sum + parseFloat(t.valor), 0);
+    const saldoPessoal = totalDebitoPessoal - totalPagoPessoal;
+
+    // Total arrecadado pelo motorista (todos os pagamentos do grupo)
+    const totalArrecadado = transacoes
+        .filter(t => t.tipo === 'pagamento')
+        .reduce((sum, t) => sum + parseFloat(t.valor), 0);
+    const totalDebitoGrupo = transacoes
+        .filter(t => t.tipo === 'debito')
+        .reduce((sum, t) => sum + parseFloat(t.valor), 0);
+    const totalPendente = totalDebitoGrupo - totalArrecadado;
+
+    // Membros inadimplentes (quem deve)
+    const saldoPorMembro = {};
+    transacoes.forEach(t => {
+        if (!saldoPorMembro[t.membro_id]) saldoPorMembro[t.membro_id] = 0;
+        if (t.tipo === 'debito') saldoPorMembro[t.membro_id] += parseFloat(t.valor);
+        if (t.tipo === 'pagamento') saldoPorMembro[t.membro_id] -= parseFloat(t.valor);
+    });
+    const inadimplentes = Object.entries(saldoPorMembro)
+        .filter(([, saldo]) => saldo > 0)
+        .map(([membroId, saldo]) => ({
+            membro: membros.find(m => m.id === membroId),
+            saldo
+        }))
+        .filter(item => item.membro);
+
+    // Próxima viagem
+    const proximaViagem = viagens.length > 0 ? viagens[0] : null;
+
     // Tabs disponíveis baseado no role
     const availableTabs = canEdit
         ? ['inicio', 'viagens', 'membros', 'config', 'grupos']
@@ -460,8 +513,20 @@ export default function Dashboard({ isAdmin = false }) {
                 {/* User info & logout */}
                 {user && (
                     <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
-                            {user.nome}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', justifyContent: 'flex-end' }}>
+                            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
+                                {user.nome}
+                            </span>
+                            <span style={{
+                                padding: '1px 6px',
+                                borderRadius: 'var(--radius-sm)',
+                                fontSize: '0.65rem',
+                                fontWeight: 700,
+                                background: canEdit ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
+                                color: canEdit ? 'var(--info, #004085)' : 'var(--success, #155724)'
+                            }}>
+                                {canEdit ? '🚗' : '👤'}
+                            </span>
                         </div>
                         <button
                             onClick={handleLogout}
@@ -641,35 +706,74 @@ export default function Dashboard({ isAdmin = false }) {
                             </div>
                         </div>
                     )}
-                    {/* Quick Stats */}
+                    {/* Quick Stats — Diferente para Motorista vs Passageiro */}
                     <div style={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                         gap: 'var(--space-3)',
                         marginBottom: 'var(--space-4)'
                     }}>
-                        <div className="summary-card">
-                            <div className="summary-title">👥 Membros</div>
-                            <div className="summary-value">{membros.length}</div>
-                        </div>
-                        <div className="summary-card">
-                            <div className="summary-title">📅 Viagens</div>
-                            <div className="summary-value">{viagens.length}</div>
-                        </div>
-                        <div className="summary-card">
-                            <div className="summary-title">
-                                {grupo.modelo_precificacao === 'por_trajeto' ? '💰 Por Trajeto' : '💰 Semanal'}
-                            </div>
-                            <div className="summary-value">
-                                R$ {grupo.modelo_precificacao === 'por_trajeto'
-                                    ? parseFloat(grupo.valor_trajeto).toFixed(2)
-                                    : parseFloat(grupo.valor_semanal).toFixed(2)
-                                }
-                            </div>
-                        </div>
+                        {canEdit ? (
+                            /* === MOTORISTA: Stats de gestão === */
+                            <>
+                                <div className="summary-card">
+                                    <div className="summary-title">👥 Membros</div>
+                                    <div className="summary-value">{membros.length}</div>
+                                </div>
+                                <div className="summary-card">
+                                    <div className="summary-title">💰 Arrecadado</div>
+                                    <div className="summary-value" style={{ color: 'var(--success, #28a745)' }}>
+                                        R$ {totalArrecadado.toFixed(2)}
+                                    </div>
+                                </div>
+                                <div className="summary-card">
+                                    <div className="summary-title">⚠️ Pendente</div>
+                                    <div className="summary-value" style={{ color: totalPendente > 0 ? 'var(--warning, #ffc107)' : 'var(--success, #28a745)' }}>
+                                        R$ {totalPendente.toFixed(2)}
+                                    </div>
+                                </div>
+                                <div className="summary-card">
+                                    <div className="summary-title">🚫 Inadimplentes</div>
+                                    <div className="summary-value" style={{ color: inadimplentes.length > 0 ? 'var(--error, #dc3545)' : 'var(--success, #28a745)' }}>
+                                        {inadimplentes.length}
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            /* === PASSAGEIRO: Stats pessoais === */
+                            <>
+                                <div className="summary-card">
+                                    <div className="summary-title">💳 Meu Saldo</div>
+                                    <div className="summary-value" style={{ color: saldoPessoal > 0 ? 'var(--error, #dc3545)' : 'var(--success, #28a745)' }}>
+                                        {saldoPessoal > 0 ? `R$ ${saldoPessoal.toFixed(2)}` : 'Em dia ✅'}
+                                    </div>
+                                </div>
+                                <div className="summary-card">
+                                    <div className="summary-title">📅 Próxima Viagem</div>
+                                    <div className="summary-value" style={{ fontSize: 'var(--font-size-md)' }}>
+                                        {proximaViagem ? formatData(proximaViagem.data) : 'Nenhuma'}
+                                    </div>
+                                </div>
+                                <div className="summary-card">
+                                    <div className="summary-title">👥 Membros</div>
+                                    <div className="summary-value">{membros.length}</div>
+                                </div>
+                                <div className="summary-card">
+                                    <div className="summary-title">
+                                        {grupo.modelo_precificacao === 'por_trajeto' ? '💰 Por Trajeto' : '💰 Semanal'}
+                                    </div>
+                                    <div className="summary-value">
+                                        R$ {grupo.modelo_precificacao === 'por_trajeto'
+                                            ? parseFloat(grupo.valor_trajeto).toFixed(2)
+                                            : parseFloat(grupo.valor_semanal).toFixed(2)
+                                        }
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
 
-                    {/* Actions */}
+                    {/* Actions — Diferente para Motorista vs Passageiro */}
                     <div className="day-detail" style={{ marginBottom: 'var(--space-4)' }}>
                         <h3 style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-lg)' }}>
                             🚀 Ações Rápidas
@@ -685,8 +789,8 @@ export default function Dashboard({ isAdmin = false }) {
                                 📋 Copiar link do grupo
                             </button>
 
-                            {/* Apenas motoristas veem esses botões */}
-                            {canEdit && (
+                            {canEdit ? (
+                                /* === MOTORISTA: Ações de gestão === */
                                 <>
                                     <button
                                         className="btn btn-secondary"
@@ -701,19 +805,76 @@ export default function Dashboard({ isAdmin = false }) {
                                         👥 Gerenciar membros
                                     </button>
                                 </>
-                            )}
-
-                            {/* Passageiros veem apenas ver membros */}
-                            {!canEdit && (
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => changeTab('membros')}
-                                >
-                                    👥 Ver membros
-                                </button>
+                            ) : (
+                                /* === PASSAGEIRO: Ações pessoais === */
+                                <>
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={() => changeTab('viagens')}
+                                    >
+                                        📅 Ver próximas viagens
+                                    </button>
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={() => changeTab('membros')}
+                                    >
+                                        👥 Ver membros
+                                    </button>
+                                </>
                             )}
                         </div>
                     </div>
+
+                    {/* === MOTORISTA: Lista de inadimplentes === */}
+                    {canEdit && inadimplentes.length > 0 && (
+                        <div className="day-detail" style={{ marginBottom: 'var(--space-4)', borderLeft: '4px solid var(--error, #dc3545)' }}>
+                            <h3 style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-lg)', color: 'var(--error, #dc3545)' }}>
+                                🚫 Membros Inadimplentes ({inadimplentes.length})
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                {inadimplentes.map(({ membro, saldo }) => (
+                                    <div key={membro.id} style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        padding: 'var(--space-2) var(--space-3)',
+                                        background: 'var(--bg-secondary)',
+                                        borderRadius: 'var(--radius-sm)'
+                                    }}>
+                                        <span>{membro.nome}</span>
+                                        <span style={{ fontWeight: 600, color: 'var(--error, #dc3545)' }}>
+                                            R$ {saldo.toFixed(2)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* === PASSAGEIRO: Resumo financeiro pessoal === */}
+                    {!canEdit && transacoesPessoais.length > 0 && (
+                        <div className="day-detail" style={{ marginBottom: 'var(--space-4)', borderLeft: saldoPessoal > 0 ? '4px solid var(--error, #dc3545)' : '4px solid var(--success, #28a745)' }}>
+                            <h3 style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-lg)' }}>
+                                💳 Meu Resumo Financeiro
+                            </h3>
+                            <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ color: 'var(--text-secondary)' }}>Total em débitos:</span>
+                                    <span style={{ fontWeight: 600 }}>R$ {totalDebitoPessoal.toFixed(2)}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ color: 'var(--text-secondary)' }}>Total pago:</span>
+                                    <span style={{ fontWeight: 600, color: 'var(--success, #28a745)' }}>R$ {totalPagoPessoal.toFixed(2)}</span>
+                                </div>
+                                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: 'var(--space-2)', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ fontWeight: 600 }}>Saldo devedor:</span>
+                                    <span style={{ fontWeight: 700, color: saldoPessoal > 0 ? 'var(--error, #dc3545)' : 'var(--success, #28a745)' }}>
+                                        {saldoPessoal > 0 ? `R$ ${saldoPessoal.toFixed(2)}` : 'Em dia ✅'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* WhatsApp Invite Link */}
                     {(grupo.whatsapp_group_id || grupo.invite_link) && (
@@ -807,6 +968,10 @@ export default function Dashboard({ isAdmin = false }) {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                             {viagens.map(viagem => {
                                 const confirmados = viagem.presencas?.filter(p => p.status === 'confirmado').length || 0;
+                                // Status pessoal do passageiro nesta viagem
+                                const minhaPresenca = membroAtual
+                                    ? viagem.presencas?.find(p => p.membro_id === membroAtual.id)
+                                    : null;
                                 return (
                                     <div key={viagem.id} className="day-detail">
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -826,8 +991,36 @@ export default function Dashboard({ isAdmin = false }) {
                                                 🕐 {viagem.horario_partida?.slice(0, 5)}
                                             </div>
                                         </div>
-                                        <div style={{ marginTop: 'var(--space-2)', color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                                            ✅ {confirmados} confirmado{confirmados !== 1 ? 's' : ''}
+                                        <div style={{ marginTop: 'var(--space-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+                                                {canEdit
+                                                    ? `✅ ${confirmados} confirmado${confirmados !== 1 ? 's' : ''} de ${membros.filter(m => !m.is_motorista).length}`
+                                                    : `✅ ${confirmados} confirmado${confirmados !== 1 ? 's' : ''}`
+                                                }
+                                            </span>
+                                            {/* Passageiro: Mostrar seu status pessoal */}
+                                            {!canEdit && (
+                                                <span style={{
+                                                    padding: '2px 8px',
+                                                    borderRadius: 'var(--radius-sm)',
+                                                    fontSize: 'var(--font-size-xs)',
+                                                    fontWeight: 600,
+                                                    background: minhaPresenca?.status === 'confirmado'
+                                                        ? 'var(--success-bg, #d4edda)'
+                                                        : minhaPresenca?.status === 'cancelado'
+                                                            ? 'rgba(220, 53, 69, 0.1)'
+                                                            : 'var(--warning-bg, #fff3cd)',
+                                                    color: minhaPresenca?.status === 'confirmado'
+                                                        ? 'var(--success, #155724)'
+                                                        : minhaPresenca?.status === 'cancelado'
+                                                            ? 'var(--error, #721c24)'
+                                                            : 'var(--warning, #856404)'
+                                                }}>
+                                                    {minhaPresenca?.status === 'confirmado' ? '✅ Confirmado'
+                                                        : minhaPresenca?.status === 'cancelado' ? '❌ Cancelado'
+                                                            : '⏳ Pendente'}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -906,22 +1099,47 @@ export default function Dashboard({ isAdmin = false }) {
                     )}
 
                     <div className="member-list">
-                        {membros.map(membro => (
-                            <div key={membro.id} className="member-item">
-                                <div className={`member-avatar ${membro.is_motorista ? 'driver' : ''}`}>
-                                    {membro.nome?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
-                                </div>
-                                <div className="member-info">
-                                    <div className="member-name">{membro.nome}</div>
-                                    <div className="member-status">
-                                        📱 {membro.telefone}
+                        {membros.map(membro => {
+                            const membroSaldo = saldoPorMembro[membro.id] || 0;
+                            return (
+                                <div key={membro.id} className="member-item">
+                                    <div className={`member-avatar ${membro.is_motorista ? 'driver' : ''}`}>
+                                        {membro.nome?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
                                     </div>
+                                    <div className="member-info">
+                                        <div className="member-name">{membro.nome}</div>
+                                        <div className="member-status">
+                                            {canEdit ? (
+                                                /* Motorista vê telefone + saldo */
+                                                <>
+                                                    📱 {membro.telefone}
+                                                    {!membro.is_motorista && membroSaldo > 0 && (
+                                                        <span style={{ marginLeft: 'var(--space-2)', color: 'var(--error, #dc3545)', fontWeight: 600, fontSize: 'var(--font-size-xs)' }}>
+                                                            • Deve R$ {membroSaldo.toFixed(2)}
+                                                        </span>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                /* Passageiro vê só telefone */
+                                                <>📱 {membro.telefone}</>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {membro.is_motorista && (
+                                        <span className="member-badge driver">🚗 Motorista</span>
+                                    )}
+                                    {!membro.is_motorista && (
+                                        <span style={{
+                                            padding: '2px 6px',
+                                            borderRadius: 'var(--radius-sm)',
+                                            fontSize: 'var(--font-size-xs)',
+                                            background: 'var(--success-bg, #d4edda)',
+                                            color: 'var(--success, #155724)'
+                                        }}>👤 Passageiro</span>
+                                    )}
                                 </div>
-                                {membro.is_motorista && (
-                                    <span className="member-badge driver">Motorista</span>
-                                )}
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
