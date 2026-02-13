@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import { detectIntent, getMensagemAjuda, getSaudacao } from './intentParser.js';
 import {
     getOrCreateMembro,
@@ -38,6 +39,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
         },
         heartbeatIntervalMs: 15000,
         timeout: 30000,
+        transport: WebSocket,
         reconnectAfterMs: (tries) => {
             // Reconnect strategy: 1s, 2s, 4s, 8s, max 30s
             const delay = Math.min(1000 * Math.pow(2, tries), 30000);
