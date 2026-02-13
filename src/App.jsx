@@ -12,7 +12,7 @@ import AvailableGroups from './components/AvailableGroups.jsx';
 import LandingPage from './components/LandingPage.jsx';
 
 function AppRoutes() {
-    const { user, loading } = useAuth();
+    const { user, loading, logout } = useAuth();
 
     if (loading) {
         return (
@@ -55,6 +55,20 @@ function AppRoutes() {
             {/* Lista de grupos disponíveis */}
             <Route path="/grupos" element={
                 <div className="container">
+                    {user && (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
+                                👤 {user.nome}
+                            </span>
+                            <button
+                                className="btn btn-secondary"
+                                style={{ padding: '4px 12px', fontSize: 'var(--font-size-xs)' }}
+                                onClick={() => { logout(); window.location.href = '/'; }}
+                            >
+                                Sair
+                            </button>
+                        </div>
+                    )}
                     <h1 style={{ marginBottom: 'var(--space-4)', textAlign: 'center' }}>🚗 Grupos Disponíveis</h1>
                     <AvailableGroups />
                     <div style={{ textAlign: 'center', marginTop: 'var(--space-4)' }}>
