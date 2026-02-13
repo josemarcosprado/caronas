@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "bot": "node -r dotenv/config --watch src/bot/server.js",
+    "bot": "node --watch src/bot/server.js",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts"
   },
   "dependencies": {

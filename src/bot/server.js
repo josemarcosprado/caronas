@@ -1,11 +1,6 @@
-/**
- * Servidor do Bot WhatsApp
- * Recebe webhooks da Evolution API e processa mensagens
- */
-
 import 'dotenv/config';
-
 import express from 'express';
+import { createClient } from '@supabase/supabase-js';
 import { detectIntent, getMensagemAjuda, getSaudacao } from './intentParser.js';
 import {
     getOrCreateMembro,
@@ -26,7 +21,6 @@ import {
     renovarInviteLink,
     promoverParaAdmin
 } from './evolutionApi.js';
-import { createClient } from '@supabase/supabase-js';
 import { getPhoneLookupFormats } from '../lib/phoneUtils.js';
 
 // Inicializar Supabase com Service Role Key para ter permissões de admin (ignorar RLS)
@@ -377,20 +371,20 @@ app.post('/webhook', async (req, res) => {
                 break;
 
             case 'saldo':
-                resposta = await getMensagemSaldo(membro.id, membro.nome);
+                resposta = await getMensagemSaldo(membro.id, membro.usuarios.nome);
                 break;
 
             case 'saudacao':
                 // Saudação rápida e amigável
-                resposta = `${getSaudacao()}, ${membro.nome}! 👋\n\nPosso te ajudar com sua carona. Digite *ajuda* para ver o que posso fazer!`;
+                resposta = `${getSaudacao()}, ${membro.usuarios.nome}! 👋\n\nPosso te ajudar com sua carona. Digite *ajuda* para ver o que posso fazer!`;
                 break;
 
             case 'ajuda':
-                resposta = getMensagemAjuda(membro.nome);
+                resposta = getMensagemAjuda(membro.usuarios.nome);
                 break;
 
             default:
-                resposta = `🤔 Não entendi, ${membro.nome}. Tente:\n• *"vou hoje"* - confirmar presença\n• *"não vou"* - cancelar\n• *"quem vai?"* - ver status\n• *"ajuda"* - ver comandos`;
+                resposta = `🤔 Não entendi, ${membro.usuarios.nome}. Tente:\n• *"vou hoje"* - confirmar presença\n• *"não vou"* - cancelar\n• *"quem vai?"* - ver status\n• *"ajuda"* - ver comandos`;
         }
 
         // Logar atividade
@@ -442,10 +436,10 @@ async function handleGroupParticipantsUpdate(data, res) {
         if (grupo.motorista_id) {
             const { data: motorista } = await supabase
                 .from('membros')
-                .select('telefone')
+                .select('*, usuarios(telefone)')
                 .eq('id', grupo.motorista_id)
                 .single();
-            motoristaTelefone = motorista?.telefone;
+            motoristaTelefone = motorista?.usuarios?.telefone;
         }
 
         for (const participantJid of participants) {
@@ -482,7 +476,7 @@ async function handleGroupParticipantsUpdate(data, res) {
             // Verificar se membro já existe
             const membroExistente = await getOrCreateMembro(telefone, `${telefone}@s.whatsapp.net`);
             if (membroExistente) {
-                console.log(`👤 Membro já existe: ${membroExistente.nome} (${telefone})`);
+                console.log(`👤 Membro já existe: ${membroExistente.usuarios.nome} (${telefone})`);
                 continue;
             }
 

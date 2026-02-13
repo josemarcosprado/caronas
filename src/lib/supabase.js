@@ -11,11 +11,16 @@ const supabaseKey = isVite
     ? import.meta.env.VITE_SUPABASE_ANON_KEY
     : (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY);
 
-if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Missing Supabase environment variables. Check your .env file.');
-}
+// Throw error only when trying to use the client if keys are missing
+const isValidEnv = supabaseUrl && supabaseKey;
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = isValidEnv
+    ? createClient(supabaseUrl, supabaseKey)
+    : new Proxy({}, {
+        get: () => {
+            throw new Error('Supabase environment variables missing. Check .env file.');
+        }
+    });
 
 // Re-export types for convenience
 export * from './database.types.js';
