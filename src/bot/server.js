@@ -719,8 +719,8 @@ app.post('/api/auth/request-reset', async (req, res) => {
             });
 
         if (insertError) {
-            console.error('Erro ao salvar código:', insertError);
-            throw new Error('Erro interno ao gerar código.');
+            console.error('Erro ao salvar código:', JSON.stringify(insertError, null, 2));
+            throw new Error(`Erro no banco de dados: ${insertError.message || insertError.details || 'Desconhecido'}`);
         }
 
         // Enviar por WhatsApp
@@ -735,7 +735,10 @@ app.post('/api/auth/request-reset', async (req, res) => {
 
     } catch (error) {
         console.error('❌ Erro no request-reset:', error);
-        res.status(500).json({ error: 'Erro ao processar solicitação.' });
+        res.status(500).json({
+            error: error.message || 'Erro ao processar solicitação.',
+            details: error.toString()
+        });
     }
 });
 

@@ -36,13 +36,16 @@ export default function ForgotPassword() {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.error || 'Erro ao solicitar código');
+                // Tenta pegar erro detalhado
+                const erroMsg = data.error || data.details || 'Erro desconhecido ao solicitar código';
+                throw new Error(erroMsg);
             }
 
             setMessage(data.message);
             setStep(2);
 
         } catch (err) {
+            console.error('Erro detalhado:', err);
             setError(err.message || 'Erro ao conectar com o servidor.');
         } finally {
             setLoading(false);
