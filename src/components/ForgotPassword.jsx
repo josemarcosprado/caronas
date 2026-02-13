@@ -26,7 +26,8 @@ export default function ForgotPassword() {
             // Para produção, isso deveria passar por uma URL configurada.
             // No .env, EVOLUTION_API_URL é do bot, mas aqui precisamos falar com o nosso server.js (BOT_PORT=3001)
 
-            const response = await fetch('http://localhost:3001/api/auth/request-reset', {
+            // Usando path relativo para aproveitar o proxy do Vite (evita CORS)
+            const response = await fetch('/api/auth/request-reset', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ telefone })
@@ -54,7 +55,7 @@ export default function ForgotPassword() {
         setError('');
 
         try {
-            const response = await fetch('http://localhost:3001/api/auth/reset-password', {
+            const response = await fetch('/api/auth/reset-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ telefone, codigo, novaSenha })
