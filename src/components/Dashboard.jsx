@@ -147,7 +147,6 @@ export default function Dashboard({ isAdmin = false }) {
                 .order('tipo', { ascending: true });
 
             setViagens(viagensData || []);
-            setSaldoPorMembro({}); // Inicializa vazio para evitar erros de renderização
 
             // Buscar transações financeiras do grupo
             const { data: transacoesData } = await supabase
