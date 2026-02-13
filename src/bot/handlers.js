@@ -81,7 +81,7 @@ export async function getOrCreateMembro(telefone, whatsappId) {
  * @param {string[]} [tipos=['ida']] - Tipos de viagem: 'ida', 'volta', ou ambos
  * @returns {Promise<string>} Mensagem de resposta
  */
-export async function confirmarPresenca(membroId, grupoId, dias, tipos = ['ida']) {
+export async function confirmarPresenca(membroId, grupoId, dias, tipos = ['ida'], isMotorista = false) {
     const hoje = new Date();
     const diasConfirmados = [];
     let totalDebitos = 0;
@@ -126,7 +126,7 @@ export async function confirmarPresenca(membroId, grupoId, dias, tipos = ['ida']
                 .single();
 
             // Se modelo por trajeto, criar débito
-            if (usaDebitoPorTrajeto && valorTrajeto > 0 && presenca) {
+            if (usaDebitoPorTrajeto && valorTrajeto > 0 && presenca && !isMotorista) {
                 // Verificar se já existe débito para esta presença
                 const { data: debitoExistente } = await supabase
                     .from('transacoes')

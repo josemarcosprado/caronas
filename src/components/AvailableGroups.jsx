@@ -59,9 +59,16 @@ export default function AvailableGroups() {
 
     if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>Carregando grupos...</div>;
 
+    // Ordenar: grupos do usuário primeiro, depois os outros
+    const sortedGroups = [...groups].sort((a, b) => {
+        const aMember = isMember(a.id) ? 0 : 1;
+        const bMember = isMember(b.id) ? 0 : 1;
+        return aMember - bMember;
+    });
+
     return (
         <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-            {groups.map(group => {
+            {sortedGroups.map(group => {
                 const memberStatus = getMembershipStatus(group.id);
                 const isCurrentGroup = user?.grupoId === group.id;
 
