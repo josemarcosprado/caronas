@@ -1,4 +1,3 @@
-import 'dotenv/config'; // Ensure env vars are loaded in Node environment
 import { createClient } from '@supabase/supabase-js';
 
 // Detecta ambiente: Vite (frontend) usa import.meta.env, Node.js (bot) usa process.env
