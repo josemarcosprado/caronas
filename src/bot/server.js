@@ -884,14 +884,6 @@ app.post('/test', async (req, res) => {
  */
 function iniciarListenerCodigosVerificacao() {
     console.log('👂 Iniciando listener de códigos de verificação...');
-    console.log(`🔧 Supabase URL: ${supabaseUrl}`);
-    console.log(`🔧 Service key (primeiros 20 chars): ${supabaseServiceKey?.substring(0, 20)}...`);
-    console.log(`🔧 Realtime endpoint: ${supabaseUrl}/realtime/v1`);
-
-    // Log Realtime connection state
-    const realtimeClient = supabase.realtime;
-    console.log(`🔧 Realtime client state: ${realtimeClient?.connectionState?.() || 'unknown'}`);
-    console.log(`🔧 Realtime client accessToken present: ${!!realtimeClient?.accessToken}`);
 
     const channel = supabase
         .channel('codigos_verificacao_inserts')
@@ -904,9 +896,7 @@ function iniciarListenerCodigosVerificacao() {
             },
             async (payload) => {
                 const { new: registro } = payload;
-                console.log(`🔔 [REALTIME] Novo código de verificação detectado!`);
-                console.log(`🔔 [REALTIME] Payload completo:`, JSON.stringify(payload, null, 2));
-                console.log(`🔔 [REALTIME] Telefone: ${registro.telefone}, Código: ${registro.codigo}`);
+                console.log(`🔔 Novo código de verificação detectado para: ${registro.telefone}`);
 
                 try {
                     // Buscar nome do usuário
@@ -922,206 +912,33 @@ function iniciarListenerCodigosVerificacao() {
                     const whatsappId = `${registro.telefone}@s.whatsapp.net`;
                     const mensagem = `🔐 *Cajurona: Redefinição de Senha*\n\nOlá, ${nome}!\n\nSeu código de verificação é: *${registro.codigo}*\n\nEle é válido por 15 minutos. Se você não solicitou isso, ignore esta mensagem.`;
 
-                    console.log(`🚀 [REALTIME] Enviando código por WhatsApp para: ${whatsappId}`);
+
 
                     // Enviar por WhatsApp (sem verificação de duplicatas)
                     await enviarMensagem(whatsappId, mensagem, false);
 
-                    console.log(`✅ [REALTIME] Código de reset enviado por WhatsApp para ${nome} (${registro.telefone})`);
+                    console.log(`✅ Código de reset enviado por WhatsApp para ${nome} (${registro.telefone})`);
                 } catch (error) {
-                    console.error(`❌ [REALTIME] Erro ao enviar código por WhatsApp para ${registro.telefone}:`, error.message);
+                    console.error(`❌ Erro ao enviar código por WhatsApp para ${registro.telefone}:`, error.message);
                 }
             }
         )
         .subscribe((status, err) => {
-            const timestamp = new Date().toISOString();
-            console.log(`📡 [REALTIME] [${timestamp}] Status do listener codigos_verificacao: ${status}`);
-
+            console.log(`📡 Status do listener codigos_verificacao: ${status}`);
             if (err) {
-                console.error(`❌ [REALTIME] [${timestamp}] Erro no subscribe:`, err);
-                console.error(`❌ [REALTIME] Erro detalhado:`, JSON.stringify(err, null, 2));
-            }
-
-            switch (status) {
-                case 'SUBSCRIBED':
-                    console.log(`✅ [REALTIME] Conectado com sucesso! Escutando inserts em codigos_verificacao.`);
-                    break;
-                case 'TIMED_OUT':
-                    console.error(`⏰ [REALTIME] TIMEOUT ao conectar ao Realtime!`);
-                    console.error(`⏰ [REALTIME] Isso pode indicar:`);
-                    console.error(`   1. Problema de rede/firewall (WebSocket bloqueado)`);
-                    console.error(`   2. A tabela 'codigos_verificacao' não está na publicação supabase_realtime`);
-                    console.error(`   3. O Realtime não está habilitado no projeto Supabase`);
-                    console.error(`⏰ [REALTIME] Tentando reconectar em 5 segundos...`);
-                    setTimeout(() => {
-                        console.log(`🔄 [REALTIME] Reconnecting...`);
-                        channel.unsubscribe().then(() => {
-                            channel.subscribe();
-                        });
-                    }, 5000);
-                    break;
-                case 'CHANNEL_ERROR':
-                    console.error(`💥 [REALTIME] Erro no canal!`);
-                    if (err) console.error(`💥 [REALTIME] Detalhes:`, err.message || err);
-                    break;
-                case 'CLOSED':
-                    console.warn(`🔒 [REALTIME] Canal fechado.`);
-                    break;
-                default:
-                    console.log(`❓ [REALTIME] Status desconhecido: ${status}`);
+                console.error(`❌ Erro no subscribe Realtime:`, err.message || err);
             }
         });
-
-    // Monitor periódico do estado do canal (a cada 30 segundos, por 5 minutos)
-    let monitorCount = 0;
-    const monitorInterval = setInterval(() => {
-        monitorCount++;
-        const state = channel.state;
-        console.log(`🔍 [REALTIME MONITOR] Canal state: ${state} (check #${monitorCount})`);
-
-        // Parar monitor após 10 checks (5 minutos)
-        if (monitorCount >= 10) {
-            clearInterval(monitorInterval);
-            console.log(`🔍 [REALTIME MONITOR] Monitor encerrado. Estado final: ${state}`);
-        }
-    }, 30000);
 
     return channel;
 }
 
-/**
- * Diagnóstico de conectividade WebSocket com Supabase Realtime
- * Testa cada camada da conexão para identificar onde falha
- */
-async function testarConectividadeWebSocket() {
-    console.log('\n🩺 ===== DIAGNÓSTICO DE CONECTIVIDADE WEBSOCKET =====\n');
-
-    const projectRef = supabaseUrl.replace('https://', '').replace('.supabase.co', '');
-    const wsUrl = `wss://${projectRef}.supabase.co/realtime/v1/websocket?apikey=${supabaseServiceKey}&vsn=1.0.0`;
-
-    // Test 1: DNS Resolution
-    console.log('🔍 [TEST 1] Resolvendo DNS...');
-    try {
-        const dns = await import('dns');
-        const { resolve4 } = dns.promises || dns;
-        const addresses = await resolve4(`${projectRef}.supabase.co`);
-        console.log(`✅ [TEST 1] DNS OK: ${projectRef}.supabase.co → ${addresses.join(', ')}`);
-    } catch (e) {
-        console.error(`❌ [TEST 1] DNS FALHOU: ${e.message}`);
-        console.error('   → Verifique /etc/resolv.conf no container LXC');
-        return false;
-    }
-
-    // Test 2: HTTPS connectivity (REST API)
-    console.log('🔍 [TEST 2] Testando conectividade HTTPS...');
-    try {
-        const https = await import('https');
-        await new Promise((resolve, reject) => {
-            const req = https.get(`${supabaseUrl}/rest/v1/`, {
-                headers: { 'apikey': supabaseServiceKey },
-                timeout: 10000,
-            }, (res) => {
-                console.log(`✅ [TEST 2] HTTPS OK: status ${res.statusCode}`);
-                res.resume();
-                resolve();
-            });
-            req.on('error', reject);
-            req.on('timeout', () => { req.destroy(); reject(new Error('HTTPS timeout')); });
-        });
-    } catch (e) {
-        console.error(`❌ [TEST 2] HTTPS FALHOU: ${e.message}`);
-        return false;
-    }
-
-    // Test 3: Raw WebSocket connection
-    console.log('🔍 [TEST 3] Testando conexão WebSocket direta...');
-    console.log(`   URL: wss://${projectRef}.supabase.co/realtime/v1/websocket`);
-    try {
-        const { default: WebSocket } = await import('ws');
-        await new Promise((resolve, reject) => {
-            const ws = new WebSocket(wsUrl, {
-                handshakeTimeout: 15000,
-            });
-
-            const timeout = setTimeout(() => {
-                ws.close();
-                reject(new Error('WebSocket handshake timeout (15s) — connection hanging'));
-            }, 15000);
-
-            ws.on('open', () => {
-                clearTimeout(timeout);
-                console.log(`✅ [TEST 3] WebSocket CONECTADO com sucesso!`);
-
-                // Send a heartbeat to test bidirectional communication
-                ws.send(JSON.stringify({
-                    topic: 'phoenix',
-                    event: 'heartbeat',
-                    payload: {},
-                    ref: '1'
-                }));
-
-                ws.on('message', (data) => {
-                    console.log(`✅ [TEST 3] WebSocket recebeu resposta: ${data.toString().substring(0, 100)}`);
-                    ws.close();
-                    resolve();
-                });
-
-                // If no response in 5s, still consider it a success (connection works)
-                setTimeout(() => {
-                    ws.close();
-                    resolve();
-                }, 5000);
-            });
-
-            ws.on('error', (err) => {
-                clearTimeout(timeout);
-                reject(err);
-            });
-
-            ws.on('unexpected-response', (req, res) => {
-                clearTimeout(timeout);
-                let body = '';
-                res.on('data', (chunk) => body += chunk);
-                res.on('end', () => {
-                    reject(new Error(`WebSocket upgrade rejected: HTTP ${res.statusCode} — ${body.substring(0, 200)}`));
-                });
-            });
-        });
-    } catch (e) {
-        console.error(`❌ [TEST 3] WebSocket FALHOU: ${e.message}`);
-        if (e.message.includes('timeout') || e.message.includes('hanging')) {
-            console.error('   → A conexão TCP abre mas o WebSocket handshake trava.');
-            console.error('   → Isso geralmente indica um proxy/firewall bloqueando WebSocket upgrade.');
-            console.error('   → Verifique: iptables, proxy reverso, ou regras do Proxmox.');
-        } else if (e.message.includes('ECONNREFUSED')) {
-            console.error('   → Conexão recusada. O servidor não aceita conexões nesta porta.');
-        } else if (e.message.includes('ENOTFOUND')) {
-            console.error('   → DNS falhou. Verifique resolução DNS no container.');
-        } else if (e.message.includes('upgrade rejected')) {
-            console.error('   → O servidor rejeitou o upgrade WebSocket. Possível problema de autenticação.');
-        }
-        return false;
-    }
-
-    console.log('\n✅ ===== DIAGNÓSTICO COMPLETO: TODOS OS TESTES PASSARAM =====\n');
-    return true;
-}
-
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
     console.log(`🤖 Bot server running on port ${PORT}`);
     console.log(`📡 Webhook: http://localhost:${PORT}/webhook`);
     console.log(`📡 API: http://localhost:${PORT}/api/create-whatsapp-group`);
     console.log(`📡 API: http://localhost:${PORT}/api/invite-link/:grupoId`);
     console.log(`❤️ Health: http://localhost:${PORT}/health`);
-
-    // Testar conectividade WebSocket antes de iniciar o listener
-    const wsOk = await testarConectividadeWebSocket();
-
-    if (wsOk) {
-        console.log('🚀 WebSocket OK! Iniciando listener Realtime...');
-    } else {
-        console.error('⚠️ WebSocket com problemas! Tentando iniciar listener Realtime mesmo assim...');
-    }
 
     // Iniciar listener de códigos de verificação
     iniciarListenerCodigosVerificacao();
