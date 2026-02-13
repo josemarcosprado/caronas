@@ -8,6 +8,7 @@ import AdminApproval from './components/AdminApproval.jsx';
 import JoinGroup from './components/JoinGroup.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AvailableGroups from './components/AvailableGroups.jsx';
+import LandingPage from './components/LandingPage.jsx';
 
 function AppRoutes() {
     const { user, loading } = useAuth();
@@ -71,67 +72,7 @@ function AppRoutes() {
             />
 
             {/* Landing page */}
-            <Route path="/" element={
-                <div className="login-container">
-                    <div className="login-card" style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>🚗</div>
-                        <h1 style={{ fontSize: 'var(--font-size-2xl)', marginBottom: 'var(--space-2)' }}>
-                            Cajurona
-                        </h1>
-                        <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-6)' }}>
-                            Gerenciamento de caronas recorrentes
-                        </p>
-
-                        {user ? (
-                            <>
-                                <p style={{ marginBottom: 'var(--space-4)', color: 'var(--text-primary)' }}>
-                                    Olá, <strong>{user.nome}</strong>! 👋
-                                </p>
-                                {user.grupoId ? (
-                                    <Link
-                                        to={user.isMotorista ? `/admin/${user.grupoId}` : `/g/${user.grupoId}`}
-                                        className="btn btn-primary"
-                                        style={{ marginBottom: 'var(--space-3)' }}
-                                    >
-                                        📊 Ir para o Dashboard
-                                    </Link>
-                                ) : (
-                                    <Link
-                                        to="/grupos"
-                                        className="btn btn-primary"
-                                        style={{ marginBottom: 'var(--space-3)' }}
-                                    >
-                                        🔍 Ver Grupos Disponíveis
-                                    </Link>
-                                )}
-                                <Link to="/criar" className="btn btn-secondary" style={{ marginBottom: 'var(--space-3)' }}>
-                                    ✨ Criar Novo Grupo
-                                </Link>
-                            </>
-                        ) : (
-                            <>
-                                <Link to="/login" className="btn btn-primary" style={{ marginBottom: 'var(--space-3)' }}>
-                                    🔑 Entrar
-                                </Link>
-                                <Link to="/cadastro" className="btn btn-secondary" style={{ marginBottom: 'var(--space-3)' }}>
-                                    📋 Cadastre-se
-                                </Link>
-                            </>
-                        )}
-
-                        <p style={{
-                            fontSize: 'var(--font-size-sm)',
-                            color: 'var(--text-muted)',
-                            marginTop: 'var(--space-4)'
-                        }}>
-                            {user
-                                ? 'Crie um grupo ou entre em um existente.'
-                                : 'Crie sua conta para começar.'
-                            }
-                        </p>
-                    </div>
-                </div>
-            } />
+            <Route path="/" element={<LandingPage />} />
         </Routes>
     );
 }
