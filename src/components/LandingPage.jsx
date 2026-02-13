@@ -92,7 +92,7 @@ export default function LandingPage() {
 
                     <div className="lp-nav-cta">
                         {user ? (
-                            <Link to={user.grupoId ? (user.isMotorista ? `/admin/${user.grupoId}` : `/g/${user.grupoId}`) : '/grupos'} className="lp-btn lp-btn-primary">
+                            <Link to="/meus-grupos" className="lp-btn lp-btn-primary">
                                 📊 Meu Dashboard
                             </Link>
                         ) : (

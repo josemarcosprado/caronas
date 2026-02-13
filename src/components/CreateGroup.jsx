@@ -128,23 +128,41 @@ function CreateGroup() {
             // 3. Criar viagens da semana
             await criarViagensSemana(grupo.id, formData.horarioIda, formData.horarioVolta);
 
-            // 4. Criar grupo no WhatsApp via bot API
+            // 4. Solicitar criação do grupo WhatsApp via bot_commands (não depende de localhost)
             let inviteLink = null;
             try {
-                const botResponse = await fetch('/api/create-whatsapp-group', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ grupoId: grupo.id })
-                });
+                const { data: cmd, error: cmdError } = await supabase
+                    .from('bot_commands')
+                    .insert({
+                        command: 'create_whatsapp_group',
+                        payload: { grupoId: grupo.id },
+                        status: 'pending'
+                    })
+                    .select()
+                    .single();
 
-                if (botResponse.ok) {
-                    const botData = await botResponse.json();
-                    inviteLink = botData.inviteLink;
-                } else {
-                    console.warn('Aviso: Não foi possível criar grupo no WhatsApp automaticamente.');
+                if (!cmdError && cmd) {
+                    // Polling: esperar até 15s para o bot processar
+                    for (let i = 0; i < 15; i++) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        const { data: updated } = await supabase
+                            .from('bot_commands')
+                            .select('status, result, error_message')
+                            .eq('id', cmd.id)
+                            .single();
+
+                        if (updated?.status === 'done') {
+                            inviteLink = updated.result?.inviteLink || null;
+                            break;
+                        }
+                        if (updated?.status === 'error') {
+                            console.warn('Bot retornou erro:', updated.error_message);
+                            break;
+                        }
+                    }
                 }
             } catch (botErr) {
-                console.warn('Aviso: Bot não disponível para criar grupo WhatsApp:', botErr.message);
+                console.warn('Aviso: Não foi possível solicitar criação do grupo WhatsApp:', botErr.message);
             }
 
             // 5. Atualizar sessão para incluir novo grupo

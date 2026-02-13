@@ -36,6 +36,7 @@ export default function Dashboard({ isAdmin = false }) {
     const [formConfig, setFormConfig] = useState({});
     const [inviteLink, setInviteLink] = useState(null);
     const [inviteLinkLoading, setInviteLinkLoading] = useState(false);
+    const [copiedToast, setCopiedToast] = useState(false);
 
     // Estado para edição de perfil
     const [perfilEdit, setPerfilEdit] = useState({
@@ -171,27 +172,12 @@ export default function Dashboard({ isAdmin = false }) {
         loadData();
     }, [loadData]);
 
-    // Carregar invite link atualizado do bot
+    // Invite link: lido diretamente do grupo (já carregado no loadData)
     useEffect(() => {
-        if (!grupoId || !grupo?.whatsapp_group_id) return;
-
-        const fetchInviteLink = async () => {
-            setInviteLinkLoading(true);
-            try {
-                const response = await fetch(`/api/invite-link/${grupoId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    setInviteLink(data.inviteLink);
-                }
-            } catch (err) {
-                console.warn('Não foi possível buscar invite link:', err.message);
-            } finally {
-                setInviteLinkLoading(false);
-            }
-        };
-
-        fetchInviteLink();
-    }, [grupoId, grupo?.whatsapp_group_id]);
+        if (grupo?.invite_link) {
+            setInviteLink(grupo.invite_link);
+        }
+    }, [grupo?.invite_link]);
 
     // Salvar configurações (apenas motoristas)
     const salvarConfig = async () => {
@@ -1150,10 +1136,11 @@ export default function Dashboard({ isAdmin = false }) {
                                         onClick={() => {
                                             const link = inviteLink || grupo.invite_link;
                                             navigator.clipboard.writeText(link);
-                                            alert('Link do grupo no WhatsApp copiado!');
+                                            setCopiedToast(true);
+                                            setTimeout(() => setCopiedToast(false), 2000);
                                         }}
                                     >
-                                        📋 Copiar Link do Grupo no WhatsApp
+                                        {copiedToast ? '✅ Link Copiado!' : '📋 Copiar Link do Grupo no WhatsApp'}
                                     </button>
                                 </div>
                             ) : (

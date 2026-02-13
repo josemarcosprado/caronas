@@ -66,21 +66,8 @@ export default function Login() {
             const redirectTo = location.state?.from?.pathname;
             if (redirectTo) {
                 navigate(redirectTo);
-            } else if (memberships && memberships.length > 0) {
-                // Tem grupo — ir pro dashboard do primeiro grupo aprovado
-                const aprovado = memberships.find(m => m.status_aprovacao === 'aprovado');
-                if (aprovado) {
-                    const path = aprovado.is_motorista
-                        ? `/admin/${aprovado.grupo_id}`
-                        : `/g/${aprovado.grupo_id}`;
-                    navigate(path);
-                } else {
-                    // Só tem pendentes — ir pra lista de grupos
-                    navigate('/grupos');
-                }
             } else {
-                // Sem grupo — ir pra lista de grupos
-                navigate('/grupos');
+                navigate('/meus-grupos');
             }
 
         } catch (err) {

@@ -939,6 +939,167 @@ function iniciarListenerCodigosVerificacao() {
     return channel;
 }
 
+/**
+ * Supabase Realtime: Escutar comandos do frontend via tabela bot_commands
+ * Padrão: frontend insere comando → bot detecta via Realtime → processa → atualiza resultado
+ * Substitui chamadas diretas a localhost (necessário para deploy Vercel)
+ */
+function iniciarListenerBotCommands() {
+    console.log('👂 Iniciando listener de bot_commands...');
+
+    const channel = supabase
+        .channel('bot_commands_inserts')
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'bot_commands'
+            },
+            async (payload) => {
+                const cmd = payload.new;
+                console.log(`🔔 Novo bot_command: ${cmd.command} (${cmd.id})`);
+
+                // Marcar como processing
+                await supabase
+                    .from('bot_commands')
+                    .update({ status: 'processing', updated_at: new Date().toISOString() })
+                    .eq('id', cmd.id);
+
+                try {
+                    let result = {};
+
+                    switch (cmd.command) {
+                        case 'create_whatsapp_group': {
+                            const { grupoId } = cmd.payload || {};
+                            if (!grupoId) throw new Error('grupoId é obrigatório');
+
+                            // Buscar dados do grupo
+                            const { data: grupo, error: grupoError } = await supabase
+                                .from('grupos')
+                                .select('id, nome, motorista_id')
+                                .eq('id', grupoId)
+                                .single();
+
+                            if (grupoError || !grupo) throw new Error('Grupo não encontrado');
+
+                            // Buscar telefone do motorista
+                            let participantes = [];
+                            if (grupo.motorista_id) {
+                                const { data: motorista } = await supabase
+                                    .from('usuarios')
+                                    .select('telefone')
+                                    .eq('id', grupo.motorista_id)
+                                    .single();
+
+                                if (motorista?.telefone) {
+                                    participantes = [motorista.telefone];
+                                }
+                            }
+
+                            // Criar grupo no WhatsApp
+                            const waResult = await criarGrupoWhatsApp(grupo.nome, participantes);
+                            const groupJid = waResult?.id || waResult?.groupId || waResult?.jid;
+
+                            if (!groupJid) throw new Error('Não foi possível obter o ID do grupo criado');
+
+                            // Buscar invite link
+                            let inviteLink = null;
+                            try {
+                                inviteLink = await buscarInviteLink(groupJid);
+                            } catch (e) {
+                                console.error('⚠️ Erro ao buscar invite link:', e.message);
+                            }
+
+                            // Salvar no banco
+                            await supabase
+                                .from('grupos')
+                                .update({
+                                    whatsapp_group_id: groupJid,
+                                    invite_link: inviteLink,
+                                    invite_link_atualizado_em: new Date().toISOString()
+                                })
+                                .eq('id', grupoId);
+
+                            // Promover motorista a admin
+                            if (participantes.length > 0) {
+                                try {
+                                    const motoristaJid = `${participantes[0]}@s.whatsapp.net`;
+                                    await promoverParaAdmin(groupJid, motoristaJid);
+                                } catch (promoteErr) {
+                                    console.warn('⚠️ Não foi possível promover motorista a admin:', promoteErr.message);
+                                }
+                            }
+
+                            console.log(`✅ Grupo WhatsApp criado via bot_command: ${grupo.nome} (${groupJid})`);
+                            result = { groupJid, inviteLink };
+                            break;
+                        }
+
+                        case 'refresh_invite_link': {
+                            const { grupoId: gId } = cmd.payload || {};
+                            if (!gId) throw new Error('grupoId é obrigatório');
+
+                            const { data: grupo } = await supabase
+                                .from('grupos')
+                                .select('whatsapp_group_id, invite_link')
+                                .eq('id', gId)
+                                .single();
+
+                            if (!grupo || !grupo.whatsapp_group_id) throw new Error('Grupo sem WhatsApp vinculado');
+
+                            const inviteLink = await buscarInviteLink(grupo.whatsapp_group_id);
+
+                            await supabase
+                                .from('grupos')
+                                .update({
+                                    invite_link: inviteLink,
+                                    invite_link_atualizado_em: new Date().toISOString()
+                                })
+                                .eq('id', gId);
+
+                            console.log(`✅ Invite link renovado via bot_command para grupo ${gId}`);
+                            result = { inviteLink };
+                            break;
+                        }
+
+                        default:
+                            throw new Error(`Comando desconhecido: ${cmd.command}`);
+                    }
+
+                    // Marcar como done
+                    await supabase
+                        .from('bot_commands')
+                        .update({
+                            status: 'done',
+                            result,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', cmd.id);
+
+                } catch (error) {
+                    console.error(`❌ Erro ao processar bot_command ${cmd.command}:`, error.message);
+                    await supabase
+                        .from('bot_commands')
+                        .update({
+                            status: 'error',
+                            error_message: error.message,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', cmd.id);
+                }
+            }
+        )
+        .subscribe((status, err) => {
+            console.log(`📡 Status do listener bot_commands: ${status}`);
+            if (err) {
+                console.error(`❌ Erro no subscribe bot_commands:`, err.message || err);
+            }
+        });
+
+    return channel;
+}
+
 app.listen(PORT, () => {
     console.log(`🤖 Bot server running on port ${PORT}`);
     console.log(`📡 Webhook: http://localhost:${PORT}/webhook`);
@@ -948,4 +1109,7 @@ app.listen(PORT, () => {
 
     // Iniciar listener de códigos de verificação
     iniciarListenerCodigosVerificacao();
+
+    // Iniciar listener de bot_commands (frontend → bot via Supabase)
+    iniciarListenerBotCommands();
 });
