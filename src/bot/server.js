@@ -737,15 +737,26 @@ app.post('/api/auth/request-reset', async (req, res) => {
 
         console.log(`💾 Código salvo no banco. Expirando em: ${expiresAt.toISOString()}`);
 
-        // Enviar por WhatsApp
         const whatsappId = `${usuario.telefone}@s.whatsapp.net`;
         const mensagem = `🔐 *Cajurona: Redefinição de Senha*\n\nOlá, ${usuario.nome}!\n\nSeu código de verificação é: *${codigo}*\n\nEle é válido por 15 minutos. Se você não solicitou isso, ignore esta mensagem.`;
 
         console.log(`🚀 Enviando mensagem WhatsApp para: ${whatsappId}`);
-        // Forçar envio (checkDuplicate = false)
-        await enviarMensagem(whatsappId, mensagem, false);
+        console.log(`🚀 Telefone do usuário no banco: "${usuario.telefone}"`);
+        console.log(`🚀 WhatsApp ID construído: "${whatsappId}"`);
 
-        console.log(`✅ Código de reset enviado para ${usuario.nome} (${usuario.telefone})`);
+        // Forçar envio (checkDuplicate = false)
+        try {
+            await enviarMensagem(whatsappId, mensagem, false);
+            console.log(`✅ Código de reset enviado para ${usuario.nome} (${usuario.telefone})`);
+        } catch (sendError) {
+            console.error(`❌ FALHA ao enviar código por WhatsApp para ${whatsappId}:`, sendError.message);
+            console.error(`❌ O código foi gerado e salvo no banco, mas NÃO foi entregue por WhatsApp.`);
+            return res.status(200).json({
+                success: true,
+                message: 'Código gerado, mas houve um problema ao enviar por WhatsApp. Tente novamente.',
+                whatsappError: true
+            });
+        }
 
         return res.status(200).json({ success: true, message: 'Código enviado com sucesso.' });
 
