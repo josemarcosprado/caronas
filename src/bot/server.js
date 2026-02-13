@@ -862,10 +862,65 @@ app.post('/test', async (req, res) => {
     res.json({ intent, msgRecebida: texto });
 });
 
+/**
+ * Supabase Realtime: Escutar novos códigos de verificação
+ * Quando o frontend gera um código via RPC, o bot detecta e envia por WhatsApp
+ */
+function iniciarListenerCodigosVerificacao() {
+    console.log('👂 Iniciando listener de códigos de verificação...');
+
+    const channel = supabase
+        .channel('codigos_verificacao_inserts')
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'codigos_verificacao'
+            },
+            async (payload) => {
+                const { new: registro } = payload;
+                console.log(`🔔 Novo código de verificação detectado para telefone: ${registro.telefone}`);
+
+                try {
+                    // Buscar nome do usuário
+                    const { data: usuario } = await supabase
+                        .from('usuarios')
+                        .select('nome')
+                        .eq('telefone', registro.telefone)
+                        .single();
+
+                    const nome = usuario?.nome || 'Usuário';
+
+                    // Construir mensagem WhatsApp
+                    const whatsappId = `${registro.telefone}@s.whatsapp.net`;
+                    const mensagem = `🔐 *Cajurona: Redefinição de Senha*\n\nOlá, ${nome}!\n\nSeu código de verificação é: *${registro.codigo}*\n\nEle é válido por 15 minutos. Se você não solicitou isso, ignore esta mensagem.`;
+
+                    console.log(`🚀 Enviando código por WhatsApp para: ${whatsappId}`);
+
+                    // Enviar por WhatsApp (sem verificação de duplicatas)
+                    await enviarMensagem(whatsappId, mensagem, false);
+
+                    console.log(`✅ Código de reset enviado por WhatsApp para ${nome} (${registro.telefone})`);
+                } catch (error) {
+                    console.error(`❌ Erro ao enviar código por WhatsApp para ${registro.telefone}:`, error.message);
+                }
+            }
+        )
+        .subscribe((status) => {
+            console.log(`📡 Status do listener codigos_verificacao: ${status}`);
+        });
+
+    return channel;
+}
+
 app.listen(PORT, () => {
     console.log(`🤖 Bot server running on port ${PORT}`);
     console.log(`📡 Webhook: http://localhost:${PORT}/webhook`);
     console.log(`📡 API: http://localhost:${PORT}/api/create-whatsapp-group`);
     console.log(`📡 API: http://localhost:${PORT}/api/invite-link/:grupoId`);
     console.log(`❤️ Health: http://localhost:${PORT}/health`);
+
+    // Iniciar listener de códigos de verificação
+    iniciarListenerCodigosVerificacao();
 });

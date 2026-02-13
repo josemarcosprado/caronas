@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-
-const BOT_API_URL = import.meta.env.VITE_SUPABASE_URL ? '' : 'http://localhost:3001'; // Fallback se precisar
+import { supabase } from '../lib/supabase';
 
 export default function ForgotPassword() {
     const [step, setStep] = useState(1); // 1: Telefone, 2: Código + Nova Senha
@@ -21,27 +20,23 @@ export default function ForgotPassword() {
         setMessage('');
 
         try {
-            // Nota: O bot server roda na porta 3001, mas em dev o Vite proxy pode não estar configurado.
-            // Assumindo que o bot server está acessível.
-            // Para produção, isso deveria passar por uma URL configurada.
-            // No .env, EVOLUTION_API_URL é do bot, mas aqui precisamos falar com o nosso server.js (BOT_PORT=3001)
+            // Chama RPC function do Supabase que gera o código e salva no banco
+            // O bot escuta novos inserts via Realtime e envia o WhatsApp
+            const { data, error: rpcError } = await supabase
+                .rpc('solicitar_reset_senha', { p_telefone: telefone });
 
-            // Usando path relativo para aproveitar o proxy do Vite (evita CORS)
-            const response = await fetch('/api/auth/request-reset', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ telefone })
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                // Tenta pegar erro detalhado
-                const erroMsg = data.error || data.details || 'Erro desconhecido ao solicitar código';
-                throw new Error(erroMsg);
+            if (rpcError) {
+                throw new Error(rpcError.message || 'Erro ao solicitar código');
             }
 
-            setMessage(data.message);
+            // A function retorna JSON com {success, message}
+            const result = typeof data === 'string' ? JSON.parse(data) : data;
+
+            if (!result.success) {
+                throw new Error(result.error || 'Erro ao solicitar código');
+            }
+
+            setMessage(result.message || 'Se o telefone estiver cadastrado, você receberá um código no WhatsApp.');
             setStep(2);
 
         } catch (err) {
@@ -58,16 +53,22 @@ export default function ForgotPassword() {
         setError('');
 
         try {
-            const response = await fetch('/api/auth/reset-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ telefone, codigo, novaSenha })
-            });
+            // Chama RPC function do Supabase para verificar código e resetar senha
+            const { data, error: rpcError } = await supabase
+                .rpc('resetar_senha_com_codigo', {
+                    p_telefone: telefone,
+                    p_codigo: codigo,
+                    p_nova_senha: novaSenha
+                });
 
-            const data = await response.json();
+            if (rpcError) {
+                throw new Error(rpcError.message || 'Erro ao redefinir senha');
+            }
 
-            if (!response.ok) {
-                throw new Error(data.error || 'Erro ao redefinir senha');
+            const result = typeof data === 'string' ? JSON.parse(data) : data;
+
+            if (!result.success) {
+                throw new Error(result.error || 'Erro ao redefinir senha');
             }
 
             // Sucesso!
