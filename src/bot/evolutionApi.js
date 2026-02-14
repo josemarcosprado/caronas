@@ -70,6 +70,7 @@ export async function enviarMensagem(numero, texto) {
  * @returns {Promise<{groupJid: string, participants: Array}>}
  */
 export async function criarGrupoWhatsApp(nomeGrupo, participantes = []) {
+    console.log(`🔧 [criarGrupoWhatsApp] Criando grupo: "${nomeGrupo}" com ${participantes.length} participantes: ${JSON.stringify(participantes)}`);
     try {
         // Tentar criar com participantes
         const result = await evolutionFetch('/group/create', {
@@ -80,13 +81,16 @@ export async function criarGrupoWhatsApp(nomeGrupo, participantes = []) {
             })
         });
 
-        console.log(`✅ Grupo WhatsApp criado: ${nomeGrupo}`);
+        console.log(`✅ [criarGrupoWhatsApp] Grupo criado! Resposta completa:`, JSON.stringify(result, null, 2));
+        console.log(`🔍 [criarGrupoWhatsApp] Campos disponíveis: ${Object.keys(result || {}).join(', ')}`);
+        console.log(`🔍 [criarGrupoWhatsApp] result.id=${result?.id}, result.groupId=${result?.groupId}, result.jid=${result?.jid}, result.gid=${result?.gid}, result.wid=${result?.wid}`);
         return result;
     } catch (error) {
+        console.error(`❌ [criarGrupoWhatsApp] Erro ao criar com participantes: ${error.message}`);
         // Se falhar com participantes (ex: motorista bloqueou ser adicionado),
         // criar grupo vazio e disponibilizar apenas o link de convite
         if (participantes.length > 0) {
-            console.warn(`⚠️ Falha ao adicionar participantes, criando grupo vazio: ${error.message}`);
+            console.warn(`⚠️ [criarGrupoWhatsApp] Tentando criar grupo vazio...`);
             try {
                 const result = await evolutionFetch('/group/create', {
                     method: 'POST',
@@ -96,15 +100,15 @@ export async function criarGrupoWhatsApp(nomeGrupo, participantes = []) {
                     })
                 });
 
-                console.log(`✅ Grupo WhatsApp criado sem participantes: ${nomeGrupo}`);
+                console.log(`✅ [criarGrupoWhatsApp] Grupo vazio criado! Resposta:`, JSON.stringify(result, null, 2));
+                console.log(`🔍 [criarGrupoWhatsApp] Campos: ${Object.keys(result || {}).join(', ')}`);
                 return result;
             } catch (retryError) {
-                console.error('❌ Erro ao criar grupo vazio:', retryError.message);
+                console.error('❌ [criarGrupoWhatsApp] Erro ao criar grupo vazio:', retryError.message);
                 throw retryError;
             }
         }
 
-        console.error('❌ Erro ao criar grupo WhatsApp:', error.message);
         throw error;
     }
 }
