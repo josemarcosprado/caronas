@@ -37,6 +37,8 @@ export default function Dashboard({ isAdmin = false }) {
     const [inviteLink, setInviteLink] = useState(null);
     const [inviteLinkLoading, setInviteLinkLoading] = useState(false);
     const [copiedToast, setCopiedToast] = useState(false);
+    const [refreshingInvite, setRefreshingInvite] = useState(false);
+    const [creatingWaGroup, setCreatingWaGroup] = useState(false);
 
 
 
@@ -1015,33 +1017,91 @@ export default function Dashboard({ isAdmin = false }) {
                         </div>
                     )}
 
-                    {/* WhatsApp Invite Link */}
-                    {(grupo.whatsapp_group_id || grupo.invite_link) && (
-                        <div className="day-detail" style={{ marginBottom: 'var(--space-4)' }}>
-                            <h3 style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-lg)' }}>
-                                📱 Link do Grupo no WhatsApp
-                            </h3>
-                            {inviteLinkLoading ? (
-                                <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>Carregando link...</p>
-                            ) : (inviteLink || grupo.invite_link) ? (
-                                <div>
-                                    <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-2)' }}>
-                                        Compartilhe o link abaixo para novos membros entrarem no grupo:
-                                    </p>
-                                    <div style={{
-                                        background: 'var(--bg-secondary)',
-                                        padding: 'var(--space-2) var(--space-3)',
-                                        borderRadius: 'var(--radius-sm)',
-                                        wordBreak: 'break-all',
-                                        fontSize: 'var(--font-size-xs)',
-                                        marginBottom: 'var(--space-2)',
-                                        color: 'var(--text-secondary)'
-                                    }}>
-                                        {inviteLink || grupo.invite_link}
-                                    </div>
+                    {/* WhatsApp Invite Link / Create Group */}
+                    <div className="day-detail" style={{ marginBottom: 'var(--space-4)' }}>
+                        <h3 style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-lg)' }}>
+                            📱 Grupo no WhatsApp
+                        </h3>
+
+                        {/* No WA group linked — offer to create */}
+                        {!grupo.whatsapp_group_id && !grupo.invite_link ? (
+                            <div>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-3)' }}>
+                                    Este grupo ainda não tem um grupo no WhatsApp vinculado.
+                                </p>
+                                {canEdit && (
                                     <button
                                         className="btn btn-primary"
                                         style={{ width: '100%' }}
+                                        disabled={creatingWaGroup}
+                                        onClick={async () => {
+                                            setCreatingWaGroup(true);
+                                            try {
+                                                const { data: cmd, error } = await supabase
+                                                    .from('bot_commands')
+                                                    .insert({
+                                                        command: 'create_whatsapp_group',
+                                                        payload: { grupoId: grupo.id },
+                                                        status: 'pending'
+                                                    })
+                                                    .select('id')
+                                                    .single();
+
+                                                if (error) throw error;
+
+                                                // Poll for result
+                                                for (let i = 0; i < 30; i++) {
+                                                    await new Promise(r => setTimeout(r, 1000));
+                                                    const { data: result } = await supabase
+                                                        .from('bot_commands')
+                                                        .select('status, result, error_message')
+                                                        .eq('id', cmd.id)
+                                                        .single();
+
+                                                    if (result?.status === 'done') {
+                                                        if (result.result?.inviteLink) {
+                                                            setInviteLink(result.result.inviteLink);
+                                                        }
+                                                        await loadData();
+                                                        break;
+                                                    }
+                                                    if (result?.status === 'error') {
+                                                        throw new Error(result.error_message || 'Erro ao criar grupo');
+                                                    }
+                                                }
+                                            } catch (err) {
+                                                alert('Erro ao criar grupo WhatsApp: ' + err.message);
+                                            } finally {
+                                                setCreatingWaGroup(false);
+                                            }
+                                        }}
+                                    >
+                                        {creatingWaGroup ? '⏳ Criando grupo...' : '🔄 Criar Grupo WhatsApp'}
+                                    </button>
+                                )}
+                            </div>
+                        ) : inviteLinkLoading ? (
+                            <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>Carregando link...</p>
+                        ) : (inviteLink || grupo.invite_link) ? (
+                            <div>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-2)' }}>
+                                    Compartilhe o link abaixo para novos membros entrarem no grupo:
+                                </p>
+                                <div style={{
+                                    background: 'var(--bg-secondary)',
+                                    padding: 'var(--space-2) var(--space-3)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    wordBreak: 'break-all',
+                                    fontSize: 'var(--font-size-xs)',
+                                    marginBottom: 'var(--space-2)',
+                                    color: 'var(--text-secondary)'
+                                }}>
+                                    {inviteLink || grupo.invite_link}
+                                </div>
+                                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                                    <button
+                                        className="btn btn-primary"
+                                        style={{ flex: 1 }}
                                         onClick={() => {
                                             const link = inviteLink || grupo.invite_link;
                                             navigator.clipboard.writeText(link);
@@ -1049,16 +1109,63 @@ export default function Dashboard({ isAdmin = false }) {
                                             setTimeout(() => setCopiedToast(false), 2000);
                                         }}
                                     >
-                                        {copiedToast ? '✅ Link Copiado!' : '📋 Copiar Link do Grupo no WhatsApp'}
+                                        {copiedToast ? '✅ Copiado!' : '📋 Copiar Link'}
                                     </button>
+                                    {canEdit && (
+                                        <button
+                                            className="btn btn-secondary"
+                                            disabled={refreshingInvite}
+                                            onClick={async () => {
+                                                setRefreshingInvite(true);
+                                                try {
+                                                    const { data: cmd, error } = await supabase
+                                                        .from('bot_commands')
+                                                        .insert({
+                                                            command: 'refresh_invite_link',
+                                                            payload: { grupoId: grupo.id },
+                                                            status: 'pending'
+                                                        })
+                                                        .select('id')
+                                                        .single();
+
+                                                    if (error) throw error;
+
+                                                    for (let i = 0; i < 15; i++) {
+                                                        await new Promise(r => setTimeout(r, 1000));
+                                                        const { data: result } = await supabase
+                                                            .from('bot_commands')
+                                                            .select('status, result, error_message')
+                                                            .eq('id', cmd.id)
+                                                            .single();
+
+                                                        if (result?.status === 'done') {
+                                                            if (result.result?.inviteLink) {
+                                                                setInviteLink(result.result.inviteLink);
+                                                            }
+                                                            break;
+                                                        }
+                                                        if (result?.status === 'error') {
+                                                            throw new Error(result.error_message || 'Erro');
+                                                        }
+                                                    }
+                                                } catch (err) {
+                                                    alert('Erro ao atualizar link: ' + err.message);
+                                                } finally {
+                                                    setRefreshingInvite(false);
+                                                }
+                                            }}
+                                        >
+                                            {refreshingInvite ? '⏳...' : '🔄 Atualizar'}
+                                        </button>
+                                    )}
                                 </div>
-                            ) : (
-                                <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>
-                                    Link de convite não disponível no momento.
-                                </p>
-                            )}
-                        </div>
-                    )}
+                            </div>
+                        ) : (
+                            <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>
+                                Link de convite não disponível no momento.
+                            </p>
+                        )}
+                    </div>
 
                     {/* Bot Info - apenas para motoristas */}
                     {canEdit && (

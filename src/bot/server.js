@@ -425,7 +425,8 @@ app.post('/webhook', async (req, res) => {
 
 /**
  * Handler para evento GROUP_PARTICIPANTS_UPDATE
- * Auto-onboarding: quando um novo membro entra no grupo, cria conta automaticamente
+ * Auto-onboarding (add): quando um novo membro entra no grupo, cria conta automaticamente
+ * Remove sync (remove): quando membro sai/é removido, desativa no Cajurona
  * @param {object} data - Dados do evento
  * @param {object} res - Response do Express
  */
@@ -437,7 +438,8 @@ async function handleGroupParticipantsUpdate(data, res) {
 
         console.log(`👥 Evento de participantes: ${action} em ${groupJid} — ${participants.length} participantes`);
 
-        if (action !== 'add' || !groupJid) {
+        if (!groupJid || !['add', 'remove'].includes(action)) {
+            console.log(`⏭️ Ação '${action}' ignorada (apenas add/remove são processados)`);
             return res.json({ success: true, ignored: true });
         }
 
@@ -522,10 +524,58 @@ async function handleGroupParticipantsUpdate(data, res) {
             }
         }
 
-        // Após adicionar novos membros, sincronizar mapeamentos LID do grupo
+        // === REMOVE: desativar membro no Cajurona ===
+        if (action === 'remove') {
+            for (const participantJid of participants) {
+                let telefone = null;
+
+                if (participantJid.includes('@s.whatsapp.net')) {
+                    telefone = participantJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+                } else if (participantJid.includes('@lid')) {
+                    const lidId = participantJid.replace('@lid', '').replace(/\D/g, '');
+                    telefone = await resolverLidParaTelefone(lidId, groupJid);
+                }
+
+                if (!telefone) {
+                    console.log(`⚠️ Não foi possível resolver telefone do participante removido: ${participantJid}`);
+                    continue;
+                }
+
+                // Buscar usuario por telefone (múltiplos formatos)
+                const formats = getPhoneLookupFormats(telefone);
+                const { data: usuario } = await supabase
+                    .from('usuarios')
+                    .select('id, nome')
+                    .in('telefone', formats)
+                    .single();
+
+                if (!usuario) {
+                    console.log(`⚠️ Nenhum usuario encontrado com telefone ${telefone}`);
+                    continue;
+                }
+
+                // Desativar membro neste grupo
+                const { data: updated, error: updateError } = await supabase
+                    .from('membros')
+                    .update({ ativo: false })
+                    .eq('usuario_id', usuario.id)
+                    .eq('grupo_id', grupo.id)
+                    .eq('ativo', true)
+                    .select('id')
+                    .single();
+
+                if (updated) {
+                    console.log(`🚪 Membro ${usuario.nome} (${telefone}) desativado do grupo ${grupo.nome}`);
+                } else if (updateError) {
+                    console.log(`⚠️ Membro ${telefone} não encontrado ativo no grupo ${grupo.nome}`);
+                }
+            }
+        }
+
+        // Sincronizar mapeamentos LID do grupo
         await sincronizarParticipantesGrupo(groupJid);
 
-        return res.json({ success: true, action: 'participants_update' });
+        return res.json({ success: true, action: 'participants_update', handled: action });
     } catch (error) {
         console.error('❌ Erro ao processar atualização de participantes:', error);
         return res.status(500).json({ error: 'Internal server error' });
@@ -1112,4 +1162,61 @@ app.listen(PORT, () => {
 
     // Iniciar listener de bot_commands (frontend → bot via Supabase)
     iniciarListenerBotCommands();
+
+    // Iniciar refresh periódico de invite links (6h)
+    iniciarRefreshPeriodicoInviteLinks();
 });
+
+/**
+ * Refresh periódico dos invite links de todos os grupos com WhatsApp vinculado
+ * Roda a cada 6 horas para manter os links atualizados
+ */
+function iniciarRefreshPeriodicoInviteLinks() {
+    const INTERVALO_MS = 6 * 60 * 60 * 1000; // 6 horas
+
+    const refreshAll = async () => {
+        try {
+            console.log('🔄 Iniciando refresh periódico de invite links...');
+
+            const { data: grupos, error } = await supabase
+                .from('grupos')
+                .select('id, nome, whatsapp_group_id')
+                .not('whatsapp_group_id', 'is', null);
+
+            if (error || !grupos || grupos.length === 0) {
+                console.log('⚠️ Nenhum grupo com WhatsApp vinculado para refresh');
+                return;
+            }
+
+            let atualizados = 0;
+            for (const grupo of grupos) {
+                try {
+                    const inviteLink = await buscarInviteLink(grupo.whatsapp_group_id);
+                    if (inviteLink) {
+                        await supabase
+                            .from('grupos')
+                            .update({
+                                invite_link: inviteLink,
+                                invite_link_atualizado_em: new Date().toISOString()
+                            })
+                            .eq('id', grupo.id);
+                        atualizados++;
+                    }
+                } catch (e) {
+                    console.error(`⚠️ Erro ao atualizar invite do grupo ${grupo.nome}:`, e.message);
+                }
+            }
+
+            console.log(`✅ Refresh concluído: ${atualizados}/${grupos.length} links atualizados`);
+        } catch (error) {
+            console.error('❌ Erro no refresh periódico de invite links:', error.message);
+        }
+    };
+
+    // Rodar imediatamente na inicialização
+    refreshAll();
+
+    // Agendar a cada 6 horas
+    setInterval(refreshAll, INTERVALO_MS);
+    console.log(`⏰ Refresh de invite links agendado a cada ${INTERVALO_MS / 3600000}h`);
+}
