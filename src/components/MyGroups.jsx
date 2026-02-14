@@ -22,7 +22,9 @@ export default function MyGroups() {
         nome: user?.nome || '',
         telefone: user?.telefone || '',
         matricula: user?.matricula || '',
-        bairro: user?.bairro || ''
+        bairro: user?.bairro || '',
+        avatarPreview: user?.avatar_url || null,
+        avatarFile: null
     });
     const [savingProfile, setSavingProfile] = useState(false);
 
@@ -32,7 +34,9 @@ export default function MyGroups() {
                 nome: user.nome || '',
                 telefone: user.telefone || '',
                 matricula: user.matricula || '',
-                bairro: user.bairro || ''
+                bairro: user.bairro || '',
+                avatarPreview: user.avatar_url || null,
+                avatarFile: null
             });
         }
     }, [user]);
@@ -69,20 +73,56 @@ export default function MyGroups() {
         e.preventDefault();
         setSavingProfile(true);
         try {
+            let avatarUrl = perfilEdit.avatarPreview;
+
+            // Upload new avatar if selected
+            if (perfilEdit.avatarFile) {
+                const fileExt = perfilEdit.avatarFile.name.split('.').pop();
+                const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+                const filePath = `${fileName}`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('avatars')
+                    .upload(filePath, perfilEdit.avatarFile);
+
+                if (uploadError) throw uploadError;
+
+                const { data: urlData } = supabase.storage
+                    .from('avatars')
+                    .getPublicUrl(filePath);
+
+                avatarUrl = urlData.publicUrl;
+            }
+
+            // Only update if url changed (or if it's the existing one, we just keep it)
+            // But here we are just constructing the update object.
+            // If the user didn't change the avatar, avatarUrl is the initial preview (URL or null)
+            // Ideally we only update if it's a new file. 
+            // However, simplicity: update everything.
+            // If avatarPreview is a blob URL (starts with blob:), we MUST have uploaded it above and got a public URL.
+            // If it's an http URL, it's existing.
+
+            const updateData = {
+                nome: perfilEdit.nome,
+                telefone: perfilEdit.telefone,
+                matricula: perfilEdit.matricula,
+                bairro: perfilEdit.bairro.trim()
+            };
+
+            if (perfilEdit.avatarFile) {
+                updateData.avatar_url = avatarUrl;
+            }
+
             const { error } = await supabase
                 .from('usuarios')
-                .update({
-                    nome: perfilEdit.nome,
-                    telefone: perfilEdit.telefone,
-                    matricula: perfilEdit.matricula,
-                    bairro: perfilEdit.bairro.trim().toLowerCase()
-                })
+                .update(updateData)
                 .eq('id', user.id);
 
             if (error) throw error;
             await refreshSession();
             alert('Perfil atualizado com sucesso!');
         } catch (err) {
+            console.error(err);
             alert('Erro ao salvar perfil: ' + err.message);
         } finally {
             setSavingProfile(false);
@@ -312,6 +352,60 @@ export default function MyGroups() {
                 <div>
                     <div className="card" style={{ padding: 'var(--space-4)' }}>
                         <h3 style={{ marginBottom: 'var(--space-3)' }}>👤 Meu Perfil</h3>
+
+                        {/* Avatar Upload */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+                            <div style={{
+                                width: '100px',
+                                height: '100px',
+                                borderRadius: '50%',
+                                background: '#e2e8f0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                overflow: 'hidden',
+                                border: '3px solid var(--border-color)',
+                                position: 'relative',
+                                marginBottom: 'var(--space-2)'
+                            }}>
+                                {perfilEdit.avatarPreview ? (
+                                    <img
+                                        src={perfilEdit.avatarPreview}
+                                        alt="Avatar"
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    />
+                                ) : (
+                                    <span style={{ fontSize: '3rem' }}>👤</span>
+                                )}
+                            </div>
+
+                            <label
+                                className="btn btn-secondary"
+                                style={{ fontSize: '0.8rem', padding: '4px 12px', cursor: 'pointer' }}
+                            >
+                                📷 Alterar Foto
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    style={{ display: 'none' }}
+                                    onChange={e => {
+                                        const file = e.target.files[0];
+                                        if (file) {
+                                            if (file.size > 2 * 1024 * 1024) {
+                                                alert('A imagem deve ter no máximo 2MB.');
+                                                return;
+                                            }
+                                            setPerfilEdit(prev => ({
+                                                ...prev,
+                                                avatarFile: file,
+                                                avatarPreview: URL.createObjectURL(file)
+                                            }));
+                                        }
+                                    }}
+                                />
+                            </label>
+                        </div>
+
                         <form onSubmit={handleSaveProfile}>
                             <div className="form-group">
                                 <label className="form-label">Nome</label>
