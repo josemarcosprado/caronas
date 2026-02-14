@@ -411,51 +411,125 @@ export default function Dashboard({ isAdmin = false }) {
 
     return (
         <div className="container">
-            {/* Header */}
-            <header className="header">
-                <div style={{ position: 'relative' }}>
-                    <h1 className="header-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                        <span className="icon">🚗</span>
-                        {grupo.nome}
-                        {/* Group switcher button */}
-                        {user && hasMultipleGroups && (
-                            <button
-                                onClick={() => setShowGroupSwitcher(!showGroupSwitcher)}
-                                style={{
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid var(--border-color)',
-                                    borderRadius: 'var(--radius-sm)',
-                                    padding: '2px 8px',
-                                    cursor: 'pointer',
-                                    fontSize: 'var(--font-size-sm)',
-                                    color: 'var(--text-secondary)',
-                                    marginLeft: 'var(--space-1)'
-                                }}
-                                title="Trocar de grupo"
-                            >
-                                ▼
-                            </button>
-                        )}
-                    </h1>
+            {/* Header Area */}
+            <header className="header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
 
-                    {showGroupSwitcher && (
-                        <div style={{
-                            position: 'absolute',
-                            top: '100%',
-                            left: 0,
-                            background: 'var(--bg-card)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: 'var(--radius-md)',
-                            boxShadow: 'var(--shadow-lg)',
-                            zIndex: 100,
-                            minWidth: '200px',
-                            overflow: 'hidden'
-                        }}>
-                            {user?.grupos?.map(g => (
+                {/* 1. Back Button Row */}
+                <div style={{ width: '100%' }}>
+                    <Link
+                        to="/meus-grupos"
+                        style={{
+                            textDecoration: 'none',
+                            color: 'var(--text-secondary)',
+                            fontSize: 'var(--font-size-sm)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                        }}
+                    >
+                        ← Voltar para Meus Grupos
+                    </Link>
+                </div>
+
+                {/* 2. Title & Controls Row */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    width: '100%',
+                    gap: 'var(--space-3)'
+                }}>
+
+                    {/* Left: Group Name & Switcher */}
+                    <div style={{ position: 'relative' }}>
+                        <h1 className="header-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0 }}>
+                            <span className="icon">🚗</span>
+                            {grupo.nome}
+
+                            {/* Group switcher toggle */}
+                            {user && hasMultipleGroups && (
                                 <button
-                                    key={g.id}
+                                    onClick={() => setShowGroupSwitcher(!showGroupSwitcher)}
+                                    style={{
+                                        background: 'var(--bg-secondary)',
+                                        border: '1px solid var(--border-color)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        padding: '2px 8px',
+                                        cursor: 'pointer',
+                                        fontSize: 'var(--font-size-sm)',
+                                        color: 'var(--text-secondary)',
+                                        marginLeft: 'var(--space-1)'
+                                    }}
+                                    title="Trocar de grupo"
+                                >
+                                    ▼
+                                </button>
+                            )}
+                        </h1>
+
+                        <p className="header-subtitle" style={{ marginTop: 'var(--space-1)' }}>
+                            {membros.length} membro{membros.length !== 1 ? 's' : ''} •
+                            {grupo.modelo_precificacao === 'por_trajeto'
+                                ? ` R$${parseFloat(grupo.valor_trajeto).toFixed(2)}/trajeto`
+                                : ` R$${parseFloat(grupo.valor_semanal).toFixed(2)}/semana`
+                            }
+                        </p>
+
+                        {/* Group switcher dropdown menu */}
+                        {showGroupSwitcher && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-md)',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                zIndex: 100,
+                                minWidth: '250px',
+                                marginTop: 'var(--space-2)',
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{ padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--border-color)', fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                    TROCAR DE GRUPO
+                                </div>
+                                {userGroups.map(m => (
+                                    <button
+                                        key={m.id}
+                                        onClick={() => handleSwitchGroup(m)}
+                                        style={{
+                                            width: '100%',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            padding: 'var(--space-3)',
+                                            background: m.grupo_id === grupoId ? 'var(--bg-secondary)' : 'transparent',
+                                            border: 'none',
+                                            borderBottom: '1px solid var(--border-color)',
+                                            cursor: m.grupo_id === grupoId ? 'default' : 'pointer',
+                                            textAlign: 'left',
+                                            fontSize: 'var(--font-size-sm)'
+                                        }}
+                                    >
+                                        <span style={{ fontWeight: m.grupo_id === grupoId ? 600 : 400, color: 'var(--text-primary)' }}>
+                                            {m.grupo_id === grupoId ? '● ' : ''}{m.grupos?.nome || 'Grupo'}
+                                        </span>
+                                        <span style={{
+                                            padding: '2px 8px',
+                                            borderRadius: 'var(--radius-sm)',
+                                            fontSize: 'var(--font-size-xs)',
+                                            fontWeight: 600,
+                                            background: m.is_motorista ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
+                                            color: m.is_motorista ? 'var(--info, #004085)' : 'var(--success, #155724)'
+                                        }}>
+                                            {m.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
+                                        </span>
+                                    </button>
+                                ))}
+                                <div style={{ borderTop: '1px solid var(--border-color)', margin: 'var(--space-1) 0' }}></div>
+                                <button
                                     onClick={() => {
-                                        switchGroup(g.id);
+                                        navigate('/meus-grupos');
                                         setShowGroupSwitcher(false);
                                     }}
                                     style={{
@@ -463,143 +537,65 @@ export default function Dashboard({ isAdmin = false }) {
                                         width: '100%',
                                         textAlign: 'left',
                                         padding: 'var(--space-2) var(--space-3)',
-                                        background: g.id === grupoId ? 'var(--bg-primary)' : 'transparent',
+                                        background: 'transparent',
                                         border: 'none',
                                         cursor: 'pointer',
-                                        color: 'var(--text-primary)'
+                                        color: 'var(--primary)',
+                                        fontWeight: 500
                                     }}
                                 >
-                                    {g.nome}
+                                    + Gerenciar Grupos
                                 </button>
-                            ))}
-                            <div style={{ borderTop: '1px solid var(--border-color)', margin: 'var(--space-1) 0' }}></div>
-                            <button
-                                onClick={() => {
-                                    navigate('/grupos');
-                                    setShowGroupSwitcher(false);
-                                }}
-                                style={{
-                                    display: 'block',
-                                    width: '100%',
-                                    textAlign: 'left',
-                                    padding: 'var(--space-2) var(--space-3)',
-                                    background: 'transparent',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    color: 'var(--primary)',
-                                    fontWeight: 500
-                                }}
-                            >
-                                + Gerenciar Grupos
-                            </button>
-                        </div>
-                    )}
-                    <p className="header-subtitle">
-                        {membros.length} membro{membros.length !== 1 ? 's' : ''} •
-                        {grupo.modelo_precificacao === 'por_trajeto'
-                            ? ` R$${parseFloat(grupo.valor_trajeto).toFixed(2)}/trajeto`
-                            : ` R$${parseFloat(grupo.valor_semanal).toFixed(2)}/semana`
-                        }
-                    </p>
-
-                    {/* Group switcher dropdown */}
-                    {showGroupSwitcher && (
-                        <div style={{
-                            position: 'absolute',
-                            top: '100%',
-                            left: 0,
-                            background: 'var(--bg-primary)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: 'var(--radius-md)',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                            zIndex: 100,
-                            minWidth: '250px',
-                            marginTop: 'var(--space-2)',
-                            overflow: 'hidden'
-                        }}>
-                            <div style={{ padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--border-color)', fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>
-                                TROCAR DE GRUPO
                             </div>
-                            {userGroups.map(m => (
-                                <button
-                                    key={m.id}
-                                    onClick={() => handleSwitchGroup(m)}
-                                    style={{
-                                        width: '100%',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        padding: 'var(--space-3)',
-                                        background: m.grupo_id === grupoId ? 'var(--bg-secondary)' : 'transparent',
-                                        border: 'none',
-                                        borderBottom: '1px solid var(--border-color)',
-                                        cursor: m.grupo_id === grupoId ? 'default' : 'pointer',
-                                        textAlign: 'left',
-                                        fontSize: 'var(--font-size-sm)'
-                                    }}
-                                >
-                                    <span style={{ fontWeight: m.grupo_id === grupoId ? 600 : 400, color: 'var(--text-primary)' }}>
-                                        {m.grupo_id === grupoId ? '● ' : ''}{m.grupos?.nome || 'Grupo'}
+                        )}
+                    </div>
+
+                    {/* Right: User Info or Login Actions */}
+                    <div>
+                        {user ? (
+                            <div style={{ textAlign: 'right' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', justifyContent: 'flex-end' }}>
+                                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
+                                        {user.nome}
                                     </span>
                                     <span style={{
-                                        padding: '2px 8px',
+                                        padding: '1px 6px',
                                         borderRadius: 'var(--radius-sm)',
-                                        fontSize: 'var(--font-size-xs)',
-                                        fontWeight: 600,
-                                        background: m.is_motorista ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
-                                        color: m.is_motorista ? 'var(--info, #004085)' : 'var(--success, #155724)'
+                                        fontSize: '0.65rem',
+                                        fontWeight: 700,
+                                        background: canEdit ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
+                                        color: canEdit ? 'var(--info, #004085)' : 'var(--success, #155724)'
                                     }}>
-                                        {m.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
+                                        {canEdit ? '🚗' : '👤'}
                                     </span>
+                                </div>
+                                <button
+                                    onClick={handleLogout}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--text-muted)',
+                                        fontSize: 'var(--font-size-xs)',
+                                        cursor: 'pointer',
+                                        textDecoration: 'underline'
+                                    }}
+                                >
+                                    Sair
                                 </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                {/* User info & logout */}
-                {user && (
-                    <div style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', justifyContent: 'flex-end' }}>
-                            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
-                                {user.nome}
-                            </span>
-                            <span style={{
-                                padding: '1px 6px',
-                                borderRadius: 'var(--radius-sm)',
-                                fontSize: '0.65rem',
-                                fontWeight: 700,
-                                background: canEdit ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
-                                color: canEdit ? 'var(--info, #004085)' : 'var(--success, #155724)'
-                            }}>
-                                {canEdit ? '🚗' : '👤'}
-                            </span>
-                        </div>
-                        <button
-                            onClick={handleLogout}
-                            style={{
-                                background: 'none',
-                                border: 'none',
-                                color: 'var(--text-muted)',
-                                fontSize: 'var(--font-size-xs)',
-                                cursor: 'pointer',
-                                textDecoration: 'underline'
-                            }}
-                        >
-                            Sair
-                        </button>
+                            </div>
+                        ) : (
+                            !isAdmin && (
+                                <Link
+                                    to={`/entrar/${grupoId}`}
+                                    className="btn btn-primary"
+                                    style={{ fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' }}
+                                >
+                                    📋 Entrar no Grupo
+                                </Link>
+                            )
+                        )}
                     </div>
-                )}
-                {/* Botão para entrar no grupo (visitantes não logados) */}
-                {!user && !isAdmin && (
-                    <Link
-                        to={`/entrar/${grupoId}`}
-                        className="btn btn-primary"
-                        style={{ fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' }}
-                    >
-                        📋 Entrar no Grupo
-                    </Link>
-                )}
+                </div>
             </header>
 
             {/* Warning banner para verificação pendente (CNH ou matrícula) */}
@@ -1447,227 +1443,381 @@ export default function Dashboard({ isAdmin = false }) {
                 </div>
             )}
 
-            {/* Tab: Configurações - apenas para motoristas */}
-            {activeTab === 'config' && canEdit && (
-                <div>
-                    <h3 style={{ marginBottom: 'var(--space-3)' }}>⚙️ Configurações do Grupo</h3>
+            {/* Main Content */}
+            <div style={{ padding: 'var(--space-4)', maxWidth: '1200px', margin: '0 auto' }}>
 
-                    <div className="day-detail">
-                        {editando ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                                <div className="form-group">
-                                    <label className="form-label">Nome do Grupo</label>
-                                    <input
-                                        type="text"
-                                        className="form-input"
-                                        value={formConfig.nome}
-                                        onChange={e => setFormConfig({ ...formConfig, nome: e.target.value })}
-                                    />
+                {/* Back Button */}
+                <div style={{ marginBottom: 'var(--space-3)' }}>
+                    <Link
+                        to="/meus-grupos"
+                        style={{
+                            textDecoration: 'none',
+                            color: 'var(--text-secondary)',
+                            fontSize: 'var(--font-size-sm)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                        }}
+                    >
+                        ← Voltar para Meus Grupos
+                    </Link>
+                </div>
+
+                {/* Header: Nome do Grupo e Info */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: 'var(--space-5)',
+                    paddingBottom: 'var(--space-4)',
+                    borderBottom: '1px solid var(--border-color)'
+                }}>
+                    <div style={{ position: 'relative' }}>
+                        <h1
+                            style={{
+                                margin: 0,
+                                fontSize: 'var(--font-size-xl)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 'var(--space-2)',
+                                cursor: userGroups.length > 1 ? 'pointer' : 'default'
+                            }}
+                            onClick={() => userGroups.length > 1 && setShowGroupSwitcher(!showGroupSwitcher)}
+                        >
+                            {userGroups.length > 1 && (
+                                <span style={{ fontSize: '0.8rem', opacity: 0.5 }}>▼</span>
+                            )}
+                        </h1>
+
+                        {/* Group switcher dropdown */}
+                        {showGroupSwitcher && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                background: 'var(--bg-primary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-md)',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                zIndex: 100,
+                                minWidth: '250px',
+                                marginTop: 'var(--space-2)',
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{ padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--border-color)', fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                    TROCAR DE GRUPO
                                 </div>
-
-                                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                                    <div className="form-group" style={{ flex: 1 }}>
-                                        <label className="form-label">Horário Ida</label>
-                                        <input
-                                            type="time"
-                                            className="form-input"
-                                            value={formConfig.horario_ida}
-                                            onChange={e => setFormConfig({ ...formConfig, horario_ida: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="form-group" style={{ flex: 1 }}>
-                                        <label className="form-label">Horário Volta</label>
-                                        <input
-                                            type="time"
-                                            className="form-input"
-                                            value={formConfig.horario_volta}
-                                            onChange={e => setFormConfig({ ...formConfig, horario_volta: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Modelo de Cobrança</label>
-                                    <select
-                                        className="form-input"
-                                        value={formConfig.modelo_precificacao}
-                                        onChange={e => setFormConfig({ ...formConfig, modelo_precificacao: e.target.value })}
+                                {userGroups.map(m => (
+                                    <button
+                                        key={m.id}
+                                        onClick={() => handleSwitchGroup(m)}
+                                        style={{
+                                            width: '100%',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            padding: 'var(--space-3)',
+                                            background: m.grupo_id === grupoId ? 'var(--bg-secondary)' : 'transparent',
+                                            border: 'none',
+                                            borderBottom: '1px solid var(--border-color)',
+                                            cursor: m.grupo_id === grupoId ? 'default' : 'pointer',
+                                            textAlign: 'left',
+                                            fontSize: 'var(--font-size-sm)'
+                                        }}
                                     >
-                                        <option value="semanal">Semanal</option>
-                                        <option value="por_trajeto">Por Trajeto</option>
-                                    </select>
-                                </div>
-
-                                {formConfig.modelo_precificacao === 'por_trajeto' ? (
-                                    <>
-                                        <div className="form-group">
-                                            <label className="form-label">Valor por Trajeto (R$)</label>
-                                            <input
-                                                type="number"
-                                                className="form-input"
-                                                step="0.01"
-                                                value={formConfig.valor_trajeto}
-                                                onChange={e => setFormConfig({ ...formConfig, valor_trajeto: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Limite para cancelar (minutos)</label>
-                                            <input
-                                                type="number"
-                                                className="form-input"
-                                                value={formConfig.tempo_limite_cancelamento}
-                                                onChange={e => setFormConfig({ ...formConfig, tempo_limite_cancelamento: e.target.value })}
-                                            />
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="form-group">
-                                        <label className="form-label">Valor Semanal (R$)</label>
-                                        <input
-                                            type="number"
-                                            className="form-input"
-                                            step="0.01"
-                                            value={formConfig.valor_semanal}
-                                            onChange={e => setFormConfig({ ...formConfig, valor_semanal: e.target.value })}
-                                        />
-                                    </div>
-                                )}
-
-                                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                                    <button className="btn btn-primary" onClick={salvarConfig}>
-                                        💾 Salvar
+                                        <span style={{ fontWeight: m.grupo_id === grupoId ? 600 : 400, color: 'var(--text-primary)' }}>
+                                            {m.grupo_id === grupoId ? '● ' : ''}{m.grupos?.nome || 'Grupo'}
+                                        </span>
+                                        <span style={{
+                                            padding: '2px 8px',
+                                            borderRadius: 'var(--radius-sm)',
+                                            fontSize: 'var(--font-size-xs)',
+                                            fontWeight: 600,
+                                            background: m.is_motorista ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
+                                            color: m.is_motorista ? 'var(--info, #004085)' : 'var(--success, #155724)'
+                                        }}>
+                                            {m.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
+                                        </span>
                                     </button>
-                                    <button className="btn btn-secondary" onClick={() => setEditando(false)}>
-                                        Cancelar
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div>
-                                <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
-                                    <div>
-                                        <strong>Nome:</strong> {grupo.nome}
-                                    </div>
-                                    <div>
-                                        <strong>Horários:</strong> Ida {grupo.horario_ida?.slice(0, 5)} • Volta {grupo.horario_volta?.slice(0, 5)}
-                                    </div>
-                                    <div>
-                                        <strong>Modelo:</strong> {grupo.modelo_precificacao === 'por_trajeto' ? 'Por Trajeto' : 'Semanal'}
-                                    </div>
-                                    <div>
-                                        <strong>Valor:</strong> R$ {
-                                            grupo.modelo_precificacao === 'por_trajeto'
-                                                ? parseFloat(grupo.valor_trajeto).toFixed(2) + '/trajeto'
-                                                : parseFloat(grupo.valor_semanal).toFixed(2) + '/semana'
-                                        }
-                                    </div>
-                                    {grupo.modelo_precificacao === 'por_trajeto' && (
-                                        <div>
-                                            <strong>Limite cancelamento:</strong> {grupo.tempo_limite_cancelamento} min antes
-                                        </div>
-                                    )}
-                                </div>
-                                <button
-                                    className="btn btn-secondary"
-                                    style={{ marginTop: 'var(--space-4)' }}
-                                    onClick={() => setEditando(true)}
-                                >
-                                    ✏️ Editar configurações
-                                </button>
+                                ))}
                             </div>
                         )}
                     </div>
 
-                    {/* Danger Zone - diferente para motorista vs passageiro */}
-                    <div className="day-detail" style={{ marginTop: 'var(--space-4)', borderColor: 'var(--error)' }}>
-                        <h4 style={{ color: 'var(--error)', marginBottom: 'var(--space-2)' }}>⚠️ Zona de Perigo</h4>
-                        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>
-                            Ações irreversíveis. Tenha cuidado.
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                            {canEdit ? (
-                                <button
-                                    className="btn"
-                                    style={{
-                                        background: 'var(--error)',
-                                        color: 'white',
-                                        opacity: 0.8
-                                    }}
-                                    onClick={excluirGrupo}
-                                >
-                                    🗑️ Excluir Grupo
-                                </button>
+                    {/* User info & logout */}
+                    {user && (
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', justifyContent: 'flex-end' }}>
+                                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
+                                    {user.nome}
+                                </span>
+                                <span style={{
+                                    padding: '1px 6px',
+                                    borderRadius: 'var(--radius-sm)',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    background: canEdit ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
+                                    color: canEdit ? 'var(--info, #004085)' : 'var(--success, #155724)'
+                                }}>
+                                    {canEdit ? '🚗' : '👤'}
+                                </span>
+                            </div>
+                            <button
+                                onClick={handleLogout}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--text-muted)',
+                                    fontSize: 'var(--font-size-xs)',
+                                    cursor: 'pointer',
+                                    textDecoration: 'underline'
+                                }}
+                            >
+                                Sair
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Botão para entrar no grupo (visitantes não logados) */}
+                    {!user && !isAdmin && (
+                        <Link
+                            to={`/entrar/${grupoId}`}
+                            className="btn btn-primary"
+                            style={{ fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' }}
+                        >
+                            📋 Entrar no Grupo
+                        </Link>
+                    )}
+                </div>
+
+                {/* Tab: Configurações - apenas para motoristas */}
+                {activeTab === 'config' && canEdit && (
+                    <div>
+                        <h3 style={{ marginBottom: 'var(--space-3)' }}>⚙️ Configurações do Grupo</h3>
+
+                        <div className="day-detail">
+                            {editando ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Nome do Grupo</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            value={formConfig.nome}
+                                            onChange={e => setFormConfig({ ...formConfig, nome: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                                        <div className="form-group" style={{ flex: 1 }}>
+                                            <label className="form-label">Horário Ida</label>
+                                            <input
+                                                type="time"
+                                                className="form-input"
+                                                value={formConfig.horario_ida}
+                                                onChange={e => setFormConfig({ ...formConfig, horario_ida: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="form-group" style={{ flex: 1 }}>
+                                            <label className="form-label">Horário Volta</label>
+                                            <input
+                                                type="time"
+                                                className="form-input"
+                                                value={formConfig.horario_volta}
+                                                onChange={e => setFormConfig({ ...formConfig, horario_volta: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label className="form-label">Modelo de Cobrança</label>
+                                        <select
+                                            className="form-input"
+                                            value={formConfig.modelo_precificacao}
+                                            onChange={e => setFormConfig({ ...formConfig, modelo_precificacao: e.target.value })}
+                                        >
+                                            <option value="semanal">Semanal</option>
+                                            <option value="por_trajeto">Por Trajeto</option>
+                                        </select>
+                                    </div>
+
+                                    {formConfig.modelo_precificacao === 'por_trajeto' ? (
+                                        <>
+                                            <div className="form-group">
+                                                <label className="form-label">Valor por Trajeto (R$)</label>
+                                                <input
+                                                    type="number"
+                                                    className="form-input"
+                                                    step="0.01"
+                                                    value={formConfig.valor_trajeto}
+                                                    onChange={e => setFormConfig({ ...formConfig, valor_trajeto: e.target.value })}
+                                                />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Limite para cancelar (minutos)</label>
+                                                <input
+                                                    type="number"
+                                                    className="form-input"
+                                                    value={formConfig.tempo_limite_cancelamento}
+                                                    onChange={e => setFormConfig({ ...formConfig, tempo_limite_cancelamento: e.target.value })}
+                                                />
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="form-group">
+                                            <label className="form-label">Valor Semanal (R$)</label>
+                                            <input
+                                                type="number"
+                                                className="form-input"
+                                                step="0.01"
+                                                value={formConfig.valor_semanal}
+                                                onChange={e => setFormConfig({ ...formConfig, valor_semanal: e.target.value })}
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                                        <button className="btn btn-primary" onClick={salvarConfig}>
+                                            💾 Salvar
+                                        </button>
+                                        <button className="btn btn-secondary" onClick={() => setEditando(false)}>
+                                            Cancelar
+                                        </button>
+                                    </div>
+                                </div>
                             ) : (
-                                <button
-                                    className="btn"
-                                    style={{
-                                        background: 'var(--error)',
-                                        color: 'white',
-                                        opacity: 0.8
-                                    }}
-                                    onClick={sairDoGrupo}
-                                >
-                                    🚪 Sair do Grupo
-                                </button>
+                                <div>
+                                    <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+                                        <div>
+                                            <strong>Nome:</strong> {grupo.nome}
+                                        </div>
+                                        <div>
+                                            <strong>Horários:</strong> Ida {grupo.horario_ida?.slice(0, 5)} • Volta {grupo.horario_volta?.slice(0, 5)}
+                                        </div>
+                                        <div>
+                                            <strong>Modelo:</strong> {grupo.modelo_precificacao === 'por_trajeto' ? 'Por Trajeto' : 'Semanal'}
+                                        </div>
+                                        <div>
+                                            <strong>Valor:</strong> R$ {
+                                                grupo.modelo_precificacao === 'por_trajeto'
+                                                    ? parseFloat(grupo.valor_trajeto).toFixed(2) + '/trajeto'
+                                                    : parseFloat(grupo.valor_semanal).toFixed(2) + '/semana'
+                                            }
+                                        </div>
+                                        {grupo.modelo_precificacao === 'por_trajeto' && (
+                                            <div>
+                                                <strong>Limite cancelamento:</strong> {grupo.tempo_limite_cancelamento} min antes
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button
+                                        className="btn btn-secondary"
+                                        style={{ marginTop: 'var(--space-4)' }}
+                                        onClick={() => setEditando(true)}
+                                    >
+                                        ✏️ Editar configurações
+                                    </button>
+                                </div>
                             )}
                         </div>
+
+                        {/* Danger Zone - diferente para motorista vs passageiro */}
+                        <div className="day-detail" style={{ marginTop: 'var(--space-4)', borderColor: 'var(--error)' }}>
+                            <h4 style={{ color: 'var(--error)', marginBottom: 'var(--space-2)' }}>⚠️ Zona de Perigo</h4>
+                            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>
+                                Ações irreversíveis. Tenha cuidado.
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                {canEdit ? (
+                                    <button
+                                        className="btn"
+                                        style={{
+                                            background: 'var(--error)',
+                                            color: 'white',
+                                            opacity: 0.8
+                                        }}
+                                        onClick={excluirGrupo}
+                                    >
+                                        🗑️ Excluir Grupo
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="btn"
+                                        style={{
+                                            background: 'var(--error)',
+                                            color: 'white',
+                                            opacity: 0.8
+                                        }}
+                                        onClick={sairDoGrupo}
+                                    >
+                                        🚪 Sair do Grupo
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* Para passageiros que de alguma forma acessam a config tab */}
-            {activeTab === 'config' && !canEdit && (
-                <div className="empty-state">
-                    <div className="icon">🔒</div>
-                    <p>Apenas motoristas podem acessar as configurações.</p>
-                    <button className="btn btn-primary" onClick={() => changeTab('membros')}>
-                        Ir para Membros
-                    </button>
-                </div>
-            )}
+                {/* Para passageiros que de alguma forma acessam a config tab */}
+                {activeTab === 'config' && !canEdit && (
+                    <div className="empty-state">
+                        <div className="icon">🔒</div>
+                        <p>Apenas motoristas podem acessar as configurações.</p>
+                        <button className="btn btn-primary" onClick={() => changeTab('membros')}>
+                            Ir para Membros
+                        </button>
+                    </div>
+                )}
 
 
-            {/* Modal de imagem expandida */}
-            {imagemExpandida && (
-                <div
-                    onClick={() => setImagemExpandida(null)}
-                    style={{
-                        position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        background: 'rgba(0, 0, 0, 0.9)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        zIndex: 1000,
-                        cursor: 'pointer',
-                        padding: 'var(--space-4)'
-                    }}
-                >
-                    <img
-                        src={imagemExpandida}
-                        alt="Documento ampliado"
+                {/* Modal de imagem expandida */}
+                {imagemExpandida && (
+                    <div
+                        onClick={() => setImagemExpandida(null)}
                         style={{
-                            maxWidth: '100%',
-                            maxHeight: '100%',
-                            objectFit: 'contain',
-                            borderRadius: 'var(--radius-md)'
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0, 0, 0, 0.9)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 1000,
+                            cursor: 'pointer',
+                            padding: 'var(--space-4)'
                         }}
-                    />
-                    <div style={{
-                        position: 'absolute',
-                        top: 'var(--space-4)',
-                        right: 'var(--space-4)',
-                        color: 'white',
-                        fontSize: '2rem',
-                        cursor: 'pointer'
-                    }}>
-                        ✕
+                    >
+                        <img
+                            src={imagemExpandida}
+                            alt="Documento ampliado"
+                            style={{
+                                maxWidth: '100%',
+                                maxHeight: '100%',
+                                objectFit: 'contain',
+                                borderRadius: 'var(--radius-md)'
+                            }}
+                        />
+                        <div
+                            style={{
+                                position: 'absolute',
+                                top: 'var(--space-4)',
+                                right: 'var(--space-4)',
+                                color: 'white',
+                                fontSize: '2rem',
+                                cursor: 'pointer'
+                            }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setImagemExpandida(null);
+                            }}
+                        >
+                            ✕
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 }

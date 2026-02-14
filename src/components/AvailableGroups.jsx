@@ -44,23 +44,45 @@ export default function AvailableGroups() {
 
             if (fetchError) throw fetchError;
 
+            // Fetch members with their neighborhoods
             const { data: membrosData } = await supabase
                 .from('membros')
-                .select('grupo_id')
+                .select('grupo_id, usuarios(bairro)')
                 .eq('ativo', true)
                 .eq('status_aprovacao', 'aprovado');
 
             const contagem = {};
+            const bairrosPorGrupo = {};
+
             (membrosData || []).forEach(m => {
+                // Count members
                 contagem[m.grupo_id] = (contagem[m.grupo_id] || 0) + 1;
+
+                // Collect neighborhoods
+                if (m.usuarios?.bairro) {
+                    if (!bairrosPorGrupo[m.grupo_id]) {
+                        bairrosPorGrupo[m.grupo_id] = new Set();
+                    }
+                    // Normalize to title case for cleaner display? For now just trim/lower to dedupe
+                    const bairroNormalizado = m.usuarios.bairro.trim();
+                    if (bairroNormalizado) {
+                        bairrosPorGrupo[m.grupo_id].add(bairroNormalizado);
+                    }
+                }
             });
 
-            const gruposComContagem = (gruposData || []).map(g => ({
-                ...g,
-                membrosCount: contagem[g.id] || 0
-            }));
+            const gruposComInfo = (gruposData || []).map(g => {
+                const bairrosSet = bairrosPorGrupo[g.id] || new Set();
+                const bairrosList = Array.from(bairrosSet).sort().join(', ');
 
-            setGroups(gruposComContagem);
+                return {
+                    ...g,
+                    membrosCount: contagem[g.id] || 0,
+                    bairros: bairrosList
+                };
+            });
+
+            setGroups(gruposComInfo);
         } catch (err) {
             console.error('Erro ao carregar grupos:', err);
             setError('Não foi possível carregar os grupos disponíveis.');
@@ -334,6 +356,11 @@ export default function AvailableGroups() {
                                 <div>
                                     🕐 {group.horario_ida?.slice(0, 5)} - {group.horario_volta?.slice(0, 5)}
                                 </div>
+                                {group.bairros && (
+                                    <div style={{ marginTop: '4px', color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                                        📍 <strong>Bairros:</strong> {group.bairros}
+                                    </div>
+                                )}
                             </div>
 
                             <div style={{ marginTop: 'auto' }}>
