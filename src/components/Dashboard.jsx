@@ -1376,12 +1376,18 @@ export default function Dashboard({ isAdmin = false }) {
                     ) : (
                         <div className="member-list">
                             {[...membros].sort((a, b) => {
+                                // Motorista always first (already from DB, but enforce)
+                                if (a.is_motorista && !b.is_motorista) return -1;
+                                if (!a.is_motorista && b.is_motorista) return 1;
                                 // Current user always last
                                 const aIsMe = a.usuario_id === user?.id;
                                 const bIsMe = b.usuario_id === user?.id;
                                 if (aIsMe && !bIsMe) return 1;
                                 if (!aIsMe && bIsMe) return -1;
-                                return 0;
+                                // Sort by bairro alphabetically (neighborhood clustering)
+                                const bairroA = (a.usuarios?.bairro || '').toLowerCase();
+                                const bairroB = (b.usuarios?.bairro || '').toLowerCase();
+                                return bairroA.localeCompare(bairroB);
                             }).map(membro => {
                                 const membroSaldo = saldoPorMembro[membro.id] || 0;
                                 const iniciais = membro.nome?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '??';
