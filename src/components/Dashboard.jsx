@@ -732,18 +732,35 @@ export default function Dashboard({ isAdmin = false }) {
                                                 className="btn"
                                                 style={{ flex: 1, background: 'var(--error)', color: 'white', fontSize: 'var(--font-size-sm)' }}
                                                 onClick={async () => {
-                                                    // Rejeitar (remover do grupo)
-                                                    if (!confirm(`Remover ${membro.usuarios?.nome} do grupo?`)) return;
+                                                    // Rejeitar (remover do grupo) e remover do WhatsApp
+                                                    if (!confirm(`Remover ${membro.usuarios?.nome} do grupo e do WhatsApp?`)) return;
 
-                                                    const { error } = await supabase
-                                                        .from('membros')
-                                                        .delete()
-                                                        .eq('id', membro.id);
+                                                    try {
+                                                        // 1. Enviar comando para o bot remover do WhatsApp
+                                                        if (membro.usuarios?.telefone) {
+                                                            await supabase
+                                                                .from('bot_commands')
+                                                                .insert({
+                                                                    command: 'remove_member',
+                                                                    payload: {
+                                                                        grupoId: grupo.id,
+                                                                        telefone: membro.usuarios.telefone
+                                                                    },
+                                                                    status: 'pending'
+                                                                });
+                                                        }
 
-                                                    if (error) {
-                                                        alert('Erro ao remover: ' + error.message);
-                                                    } else {
+                                                        // 2. Remover do banco de dados (Cajurona)
+                                                        const { error } = await supabase
+                                                            .from('membros')
+                                                            .delete()
+                                                            .eq('id', membro.id);
+
+                                                        if (error) throw error;
+
                                                         loadData();
+                                                    } catch (err) {
+                                                        alert('Erro ao remover: ' + err.message);
                                                     }
                                                 }}
                                             >

@@ -20,7 +20,8 @@ import {
     buscarInviteLink,
     buscarParticipantes,
     renovarInviteLink,
-    promoverParaAdmin
+    promoverParaAdmin,
+    removeParticipante
 } from './evolutionApi.js';
 import { getPhoneLookupFormats } from '../lib/phoneUtils.js';
 
@@ -1070,7 +1071,27 @@ async function processarBotCommand(cmd) {
                     }
                 }
 
-                console.log(`🔧 [create_whatsapp_group] Participantes: ${JSON.stringify(participantes)}`);
+                // FALLBACK: Se não tem motorista ou telefone, buscar PRIMEIRO MEMBRO com telefone
+                if (participantes.length === 0) {
+                    console.log(`🔧 [create_whatsapp_group] Sem motorista/telefone. Buscando qualquer membro...`);
+                    const { data: membros } = await supabase
+                        .from('membros')
+                        .select('usuario_id, usuarios(telefone)')
+                        .eq('grupo_id', grupoId)
+                        .eq('ativo', true)
+                        .limit(5); // Buscar alguns para garantir
+
+                    if (membros && membros.length > 0) {
+                        // Encontrar primeiro com telefone válido
+                        const membroComTel = membros.find(m => m.usuarios?.telefone);
+                        if (membroComTel) {
+                            console.log(`🔧 [create_whatsapp_group] Usando membro fallback: ${membroComTel.usuarios.telefone}`);
+                            participantes = [membroComTel.usuarios.telefone];
+                        }
+                    }
+                }
+
+                console.log(`🔧 [create_whatsapp_group] Participantes final: ${JSON.stringify(participantes)}`);
 
                 // Criar grupo no WhatsApp
                 const waResult = await criarGrupoWhatsApp(grupo.nome, participantes);
@@ -1159,6 +1180,37 @@ async function processarBotCommand(cmd) {
 
                 console.log(`✅ Invite link renovado via bot_command para grupo ${gId}`);
                 result = { inviteLink };
+                break;
+            }
+
+            case 'remove_member': {
+                const { grupoId, telefone } = cmd.payload || {};
+                if (!grupoId || !telefone) throw new Error('grupoId e telefone são obrigatórios');
+
+                // Buscar groupJid
+                const { data: grupo } = await supabase
+                    .from('grupos')
+                    .select('whatsapp_group_id, nome')
+                    .eq('id', grupoId)
+                    .single();
+
+                if (!grupo || !grupo.whatsapp_group_id) {
+                    console.warn(`⚠️ Grupo ${grupoId} sem WA vinculado. Apenas removendo do banco.`);
+                    result = { skipped: true, reason: 'no_wa_group' };
+                    break;
+                }
+
+                const participantJid = `${telefone}@s.whatsapp.net`;
+                console.log(`🔨 Removendo ${participantJid} do grupo WA ${grupo.nome}...`);
+
+                try {
+                    await removeParticipante(grupo.whatsapp_group_id, participantJid);
+                    result = { success: true };
+                } catch (e) {
+                    console.error(`❌ Erro ao remover do WA: ${e.message}`);
+                    // Não falhar o comando inteiro se o user já tiver saído
+                    result = { success: false, error: e.message };
+                }
                 break;
             }
 

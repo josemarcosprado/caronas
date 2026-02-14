@@ -231,10 +231,36 @@ export async function promoverParaAdmin(groupJid, participantJid) {
             })
         });
 
+        // ...existing code...
         console.log(`👑 Participante promovido a admin: ${participantJid} em ${groupJid}`);
         return result;
     } catch (error) {
         console.error('❌ Erro ao promover participante a admin:', error.message);
+        throw error;
+    }
+}
+
+/**
+ * Remove um participante do grupo WhatsApp
+ * @param {string} groupJid - JID do grupo
+ * @param {string} participantJid - JID do participante
+ * @returns {Promise<object>}
+ */
+export async function removeParticipante(groupJid, participantJid) {
+    try {
+        const result = await evolutionFetch('/group/updateParticipant', {
+            method: 'PUT',
+            body: JSON.stringify({
+                groupJid,
+                action: 'remove',
+                participants: [participantJid]
+            })
+        });
+
+        console.log(`👋 Participante removido: ${participantJid} de ${groupJid}`);
+        return result;
+    } catch (error) {
+        console.error('❌ Erro ao remover participante:', error.message);
         throw error;
     }
 }
