@@ -104,6 +104,10 @@ export default function AvailableGroups() {
         }
     };
 
+    // --- Search & Sort State ---
+    const [searchTerm, setSearchTerm] = useState('');
+    const [sortBy, setSortBy] = useState('relevance'); // 'relevance' | 'price_asc' | 'time_asc'
+
     const isMember = (groupId) => {
         return user?.memberships?.some(m => m.grupo_id === groupId);
     };
@@ -113,6 +117,47 @@ export default function AvailableGroups() {
         return member ? member.status_aprovacao : null;
     };
 
+    // --- Filter & Sort Logic ---
+    const filteredGroups = groups.filter(group => {
+        if (!searchTerm) return true;
+        const term = searchTerm.toLowerCase();
+        const nomeMatch = group.nome?.toLowerCase().includes(term);
+        const bairroMatch = group.bairros?.toLowerCase().includes(term);
+        return nomeMatch || bairroMatch;
+    }).sort((a, b) => {
+        // Always prioritize "My Groups" regardless of sort? 
+        // Or respect the sort strictly? 
+        // Let's keep "My Groups" at top ONLY for relevance, otherwise follow the sort.
+
+        if (sortBy === 'relevance') {
+            const aMember = isMember(a.id) ? 0 : 1;
+            const bMember = isMember(b.id) ? 0 : 1;
+            if (aMember !== bMember) return aMember - bMember;
+            // Secondary sort by name
+            return (a.nome || '').localeCompare(b.nome || '');
+        }
+
+        if (sortBy === 'price_asc') {
+            // Normalize price for comparison
+            const getPrice = (g) => {
+                if (g.modelo_precificacao === 'por_trajeto') return (parseFloat(g.valor_trajeto) || 0) * 10; // Approx weekly cost? or just compare unit price? 
+                // Let's compare raw values but treat them separately? 
+                // Actually, let's just compare the numeric value fields directly.
+                // A better approach might be to sort cheapest to most expensive regardless of model?
+                // For simplicity, let's use the visible value.
+                return g.modelo_precificacao === 'por_trajeto'
+                    ? parseFloat(g.valor_trajeto)
+                    : parseFloat(g.valor_semanal);
+            };
+            return getPrice(a) - getPrice(b);
+        }
+
+        if (sortBy === 'time_asc') {
+            return (a.horario_ida || '').localeCompare(b.horario_ida || '');
+        }
+
+        return 0;
+    });
     // --- Funções do modal de criação ---
 
     const openCreateModal = () => {
@@ -306,13 +351,6 @@ export default function AvailableGroups() {
 
     if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>Carregando grupos...</div>;
 
-    // Ordenar: grupos do usuário primeiro, depois os outros
-    const sortedGroups = [...groups].sort((a, b) => {
-        const aMember = isMember(a.id) ? 0 : 1;
-        const bMember = isMember(b.id) ? 0 : 1;
-        return aMember - bMember;
-    });
-
     return (
         <div>
             {/* Botão Criar Grupo */}
@@ -326,9 +364,37 @@ export default function AvailableGroups() {
                 </button>
             </div>
 
+            {/* Search & Sort Controls */}
+            <div style={{
+                marginBottom: '1rem',
+                display: 'flex',
+                gap: '0.5rem',
+                flexWrap: 'wrap'
+            }}>
+                <input
+                    type="text"
+                    placeholder="🔍 Buscar por nome ou bairro..."
+                    className="form-input"
+                    style={{ flex: 1, minWidth: '200px' }}
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                />
+
+                <select
+                    className="form-input"
+                    style={{ width: 'auto' }}
+                    value={sortBy}
+                    onChange={e => setSortBy(e.target.value)}
+                >
+                    <option value="relevance">Meus Grupos</option>
+                    <option value="price_asc">💲 Preço (Menor)</option>
+                    <option value="time_asc">🕐 Horário (Cedo)</option>
+                </select>
+            </div>
+
             {/* Lista de Grupos */}
             <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-                {sortedGroups.map(group => {
+                {filteredGroups.map(group => {
                     const memberStatus = getMembershipStatus(group.id);
                     const isCurrentGroup = user?.grupoId === group.id;
 
