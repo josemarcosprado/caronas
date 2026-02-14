@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 // Removed self-import
-import AvailableGroups from './AvailableGroups.jsx';
+
 
 export default function Dashboard({ isAdmin = false }) {
     const { grupoId } = useParams();
@@ -26,7 +26,7 @@ export default function Dashboard({ isAdmin = false }) {
     const [searchParams, setSearchParams] = useSearchParams();
     const activeTab = useMemo(() => {
         const tab = searchParams.get('tab');
-        const validTabs = ['inicio', 'viagens', 'membros', 'config', 'grupos', 'perfil'];
+        const validTabs = ['inicio', 'viagens', 'membros', 'config'];
         return validTabs.includes(tab) ? tab : 'inicio';
     }, [searchParams]);
     const changeTab = useCallback((tab) => {
@@ -38,32 +38,13 @@ export default function Dashboard({ isAdmin = false }) {
     const [inviteLinkLoading, setInviteLinkLoading] = useState(false);
     const [copiedToast, setCopiedToast] = useState(false);
 
-    // Estado para edição de perfil
-    const [perfilEdit, setPerfilEdit] = useState({
-        nome: user?.nome || '',
-        telefone: user?.telefone || '',
-        matricula: user?.matricula || '',
-        bairro: user?.bairro || ''
-    });
-    const [savingProfile, setSavingProfile] = useState(false);
 
-    // Atualizar estado de perfil quando user mudar
-    useEffect(() => {
-        if (user) {
-            setPerfilEdit({
-                nome: user.nome || '',
-                telefone: user.telefone || '',
-                matricula: user.matricula || '',
-                bairro: user.bairro || ''
-            });
-        }
-    }, [user]);
 
     // Carregar dados
     const loadData = useCallback(async () => {
         try {
             if (!grupoId || grupoId === 'undefined' || grupoId === 'null') {
-                navigate('/grupos');
+                navigate('/meus-grupos');
                 return;
             }
 
@@ -294,33 +275,7 @@ export default function Dashboard({ isAdmin = false }) {
         }
     };
 
-    // Deletar conta do usuário
-    const deletarConta = async () => {
-        if (!confirm('Tem certeza que deseja EXCLUIR sua conta? Você será removido de todos os grupos. Esta ação é irreversível!')) return;
-        if (!confirm('ÚLTIMA CONFIRMAÇÃO: Excluir permanentemente sua conta (' + user?.nome + ')?')) return;
 
-        try {
-            // Deletar todas as memberships primeiro (CASCADE deveria lidar, mas por segurança)
-            await supabase
-                .from('membros')
-                .delete()
-                .eq('usuario_id', user.id);
-
-            // Deletar conta
-            const { error } = await supabase
-                .from('usuarios')
-                .delete()
-                .eq('id', user.id);
-
-            if (error) throw error;
-
-            logout();
-            navigate('/');
-        } catch (err) {
-            console.error('Erro ao deletar conta:', err);
-            alert('Erro ao deletar conta: ' + err.message);
-        }
-    };
 
     // Fazer logout
     const handleLogout = () => {
@@ -328,52 +283,7 @@ export default function Dashboard({ isAdmin = false }) {
         navigate('/');
     };
 
-    // Salvar perfil do usuário
-    const handleSaveProfile = async (e) => {
-        e.preventDefault();
-        setSavingProfile(true);
-        try {
-            const { error } = await supabase
-                .from('usuarios')
-                .update({
-                    nome: perfilEdit.nome,
-                    telefone: perfilEdit.telefone,
-                    matricula: perfilEdit.matricula,
-                    bairro: perfilEdit.bairro.trim().toLowerCase()
-                })
-                .eq('id', user.id);
 
-            if (error) throw error;
-
-            // Se o bairro mudou, marcar flag 'bairro_mudou' no membro
-            if (user.bairro !== perfilEdit.bairro.trim().toLowerCase() && user.membroId) {
-                await supabase
-                    .from('membros')
-                    .update({ bairro_mudou: true })
-                    .eq('id', user.membroId);
-            }
-
-            // Se o bairro mudou, marcar flag 'bairro_mudou' no membro
-            if (user.bairro !== perfilEdit.bairro.trim().toLowerCase() && user.membroId) {
-                await supabase
-                    .from('membros')
-                    .update({ bairro_mudou: true })
-                    .eq('id', user.membroId);
-            }
-
-            // Recarregar sessão para atualizar dados no contexto
-            await refreshSession();
-
-
-
-            alert('Perfil atualizado com sucesso!');
-        } catch (err) {
-            console.error('Erro ao atualizar perfil:', err);
-            alert('Erro ao atualizar perfil: ' + err.message);
-        } finally {
-            setSavingProfile(false);
-        }
-    };
 
     // Aprovar ou rejeitar membro
     const handleApproveMember = async (membroId, novoStatus) => {
@@ -481,8 +391,8 @@ export default function Dashboard({ isAdmin = false }) {
 
     // Tabs disponíveis baseado no role
     const availableTabs = canEdit
-        ? ['inicio', 'viagens', 'membros', 'config', 'perfil', 'grupos']
-        : ['inicio', 'viagens', 'membros', 'perfil', 'grupos'];
+        ? ['inicio', 'viagens', 'membros', 'config']
+        : ['inicio', 'viagens', 'membros'];
 
     // Grupos do usuário (para o switcher)
     const userGroups = user?.memberships?.filter(m => m.status_aprovacao === 'aprovado' && m.grupos) || [];
@@ -745,8 +655,7 @@ export default function Dashboard({ isAdmin = false }) {
                         {tab === 'viagens' && '📅 Viagens'}
                         {tab === 'membros' && '👥 Membros'}
                         {tab === 'config' && '⚙️ Config'}
-                        {tab === 'perfil' && '👤 Meu Perfil'}
-                        {tab === 'grupos' && '📋 Meus Grupos'}
+
                     </button>
                 ))}
             </div>
@@ -1186,128 +1095,6 @@ export default function Dashboard({ isAdmin = false }) {
                 </div>
             )}
 
-            {/* Tab: Perfil */}
-            {activeTab === 'perfil' && (
-                <div>
-                    <h3 style={{ marginBottom: 'var(--space-3)' }}>👤 Meu Perfil</h3>
-                    <div className="card">
-                        <form onSubmit={handleSaveProfile}>
-                            <div className="form-group">
-                                <label className="form-label">Nome Completo</label>
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    value={perfilEdit.nome}
-                                    readOnly
-                                    style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', color: 'var(--text-muted)' }}
-                                />
-                                <small style={{ color: 'var(--text-muted)' }}>
-                                    O nome não pode ser alterado pelo painel.
-                                </small>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Telefone (WhatsApp)</label>
-                                <input
-                                    type="tel"
-                                    className="form-input"
-                                    value={perfilEdit.telefone}
-                                    onChange={e => setPerfilEdit({ ...perfilEdit, telefone: e.target.value })}
-                                    required
-                                />
-                                <small style={{ color: 'var(--text-muted)' }}>
-                                    Usado para contato e identificação no grupo do WhatsApp.
-                                </small>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Matrícula</label>
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    value={perfilEdit.matricula}
-                                    onChange={e => setPerfilEdit({ ...perfilEdit, matricula: e.target.value })}
-                                    readOnly={!!user?.matricula}
-                                    style={user?.matricula ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', color: 'var(--text-muted)' } : {}}
-                                />
-                                {user?.matricula && (
-                                    <small style={{ color: 'var(--text-muted)' }}>
-                                        A matrícula só pode ser alterada se estiver vazia.
-                                    </small>
-                                )}
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Bairro</label>
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    value={perfilEdit.bairro}
-                                    onChange={e => setPerfilEdit({ ...perfilEdit, bairro: e.target.value })}
-                                    placeholder="Ex: Centro, Jabotiana, Luzia"
-                                />
-                                <small style={{ color: 'var(--text-muted)' }}>
-                                    Bairro onde você mora ou deseja ser pego na carona.
-                                </small>
-                                {user?.bairro && perfilEdit.bairro.trim().toLowerCase() !== user.bairro && (
-                                    <div style={{
-                                        marginTop: 'var(--space-2)',
-                                        padding: 'var(--space-3)',
-                                        background: 'var(--warning-bg, #fff3cd)',
-                                        color: 'var(--warning, #856404)',
-                                        borderRadius: 'var(--radius-md)',
-                                        fontSize: 'var(--font-size-sm)'
-                                    }}>
-                                        <strong>⚠️ Atenção:</strong> Ao mudar o bairro, o motorista do grupo irá reavaliar sua participação. Caso não aceite o novo bairro, você será removido do grupo.
-                                    </div>
-                                )}
-                            </div>
-
-                            <button
-                                type="submit"
-                                className="btn btn-primary"
-                                disabled={savingProfile}
-                            >
-                                {savingProfile ? 'Salvando...' : '💾 Salvar Alterações'}
-                            </button>
-                        </form>
-                    </div>
-
-                    {/* Zona de perigo — disponível para todos */}
-                    <div className="card" style={{ marginTop: 'var(--space-4)', borderLeft: '4px solid var(--error, #dc3545)' }}>
-                        <h4 style={{ color: 'var(--error, #dc3545)', marginBottom: 'var(--space-2)' }}>⚠️ Zona de Perigo</h4>
-                        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>
-                            Ações irreversíveis. Tenha cuidado.
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                            <button
-                                className="btn"
-                                style={{
-                                    background: 'var(--error)',
-                                    color: 'white',
-                                    opacity: 0.8
-                                }}
-                                onClick={sairDoGrupo}
-                            >
-                                🚪 Sair do Grupo
-                            </button>
-                            <button
-                                className="btn"
-                                style={{
-                                    background: 'transparent',
-                                    color: 'var(--error)',
-                                    border: '1px solid var(--error)',
-                                    opacity: 0.7,
-                                    fontSize: 'var(--font-size-sm)'
-                                }}
-                                onClick={deletarConta}
-                            >
-                                🗑️ Excluir Minha Conta
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Tab: Viagens */}
             {activeTab === 'viagens' && (
@@ -1464,21 +1251,31 @@ export default function Dashboard({ isAdmin = false }) {
                         </div>
                     ) : (
                         <div className="member-list">
-                            {membros.map(membro => {
+                            {[...membros].sort((a, b) => {
+                                // Current user always last
+                                const aIsMe = a.usuario_id === user?.id;
+                                const bIsMe = b.usuario_id === user?.id;
+                                if (aIsMe && !bIsMe) return 1;
+                                if (!aIsMe && bIsMe) return -1;
+                                return 0;
+                            }).map(membro => {
                                 const membroSaldo = saldoPorMembro[membro.id] || 0;
                                 const iniciais = membro.nome?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '??';
+                                const isMe = membro.usuario_id === user?.id;
                                 return (
-                                    <div key={membro.id} className="member-item">
+                                    <div key={membro.id} className="member-item" style={isMe ? { borderLeft: '3px solid var(--primary)', paddingLeft: 'var(--space-2)' } : {}}>
                                         <div className={`member-avatar ${membro.is_motorista ? 'driver' : 'confirmed'}`}
                                             style={!membro.is_motorista ? { background: 'var(--accent-primary)', color: 'white', opacity: 0.8 } : { background: 'var(--accent-secondary)', color: 'white' }}
                                         >
                                             {iniciais}
                                         </div>
-                                        <div className="member-info">
-                                            <div className="member-name">{membro.nome}</div>
+                                        <div className="member-info" style={{ flex: 1 }}>
+                                            <div className="member-name">
+                                                {membro.nome}
+                                                {isMe && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginLeft: '6px' }}>(você)</span>}
+                                            </div>
                                             <div className="member-status">
                                                 {canEdit ? (
-                                                    /* Motorista vê telefone + saldo */
                                                     <>
                                                         📱 {membro.telefone || 'Sem telefone'}
                                                         {!membro.is_motorista && membroSaldo > 0 && (
@@ -1488,13 +1285,29 @@ export default function Dashboard({ isAdmin = false }) {
                                                         )}
                                                     </>
                                                 ) : (
-                                                    /* Passageiro vê só telefone */
                                                     <>📱 {membro.telefone || 'Sem telefone'}</>
                                                 )}
                                             </div>
                                         </div>
                                         {membro.is_motorista && (
                                             <span className="member-badge driver">Motorista</span>
+                                        )}
+                                        {isMe && !membro.is_motorista && (
+                                            <button
+                                                onClick={sairDoGrupo}
+                                                className="btn"
+                                                style={{
+                                                    background: 'transparent',
+                                                    color: 'var(--error, #dc3545)',
+                                                    border: '1px solid var(--error, #dc3545)',
+                                                    fontSize: 'var(--font-size-xs)',
+                                                    padding: '4px 10px',
+                                                    borderRadius: 'var(--radius-sm)',
+                                                    whiteSpace: 'nowrap'
+                                                }}
+                                            >
+                                                🚪 Sair
+                                            </button>
                                         )}
                                     </div>
                                 );
@@ -1667,19 +1480,6 @@ export default function Dashboard({ isAdmin = false }) {
                                     🚪 Sair do Grupo
                                 </button>
                             )}
-                            <button
-                                className="btn"
-                                style={{
-                                    background: 'transparent',
-                                    color: 'var(--error)',
-                                    border: '1px solid var(--error)',
-                                    opacity: 0.7,
-                                    fontSize: 'var(--font-size-sm)'
-                                }}
-                                onClick={deletarConta}
-                            >
-                                🗑️ Excluir Minha Conta
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -1690,67 +1490,12 @@ export default function Dashboard({ isAdmin = false }) {
                 <div className="empty-state">
                     <div className="icon">🔒</div>
                     <p>Apenas motoristas podem acessar as configurações.</p>
-                    <button className="btn btn-primary" onClick={() => changeTab('inicio')}>
-                        Voltar ao início
+                    <button className="btn btn-primary" onClick={() => changeTab('membros')}>
+                        Ir para Membros
                     </button>
                 </div>
             )}
-            {/* Tab: Meus Grupos + Disponíveis */}
-            {activeTab === 'grupos' && (
-                <div>
-                    {/* Meus Grupos */}
-                    {user && userGroups.length > 0 && (
-                        <>
-                            <h3 style={{ marginBottom: 'var(--space-3)' }}>📋 Meus Grupos</h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-6)' }}>
-                                {userGroups.map(m => (
-                                    <div
-                                        key={m.id}
-                                        onClick={() => handleSwitchGroup(m)}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            padding: 'var(--space-3) var(--space-4)',
-                                            background: m.grupo_id === grupoId ? 'var(--bg-secondary)' : 'var(--bg-primary)',
-                                            border: m.grupo_id === grupoId ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                                            borderRadius: 'var(--radius-md)',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.15s ease'
-                                        }}
-                                    >
-                                        <div>
-                                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
-                                                {m.grupo_id === grupoId ? '● ' : ''}{m.grupos?.nome || 'Grupo'}
-                                            </div>
-                                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>
-                                                {m.grupo_id === grupoId ? 'Grupo atual' : 'Clique para acessar'}
-                                            </div>
-                                        </div>
-                                        <span style={{
-                                            padding: '4px 10px',
-                                            borderRadius: 'var(--radius-sm)',
-                                            fontSize: 'var(--font-size-xs)',
-                                            fontWeight: 600,
-                                            background: m.is_motorista ? 'var(--info-bg, #cce5ff)' : 'var(--success-bg, #d4edda)',
-                                            color: m.is_motorista ? 'var(--info, #004085)' : 'var(--success, #155724)'
-                                        }}>
-                                            {m.is_motorista ? '🚗 Motorista' : '👤 Passageiro'}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
-                    )}
 
-                    {/* Grupos Disponíveis */}
-                    <h3 style={{ marginBottom: 'var(--space-3)' }}>🔍 Outros Grupos Disponíveis</h3>
-                    <p style={{ marginBottom: 'var(--space-4)', color: 'var(--text-secondary)' }}>
-                        Você pode participar de vários grupos como passageiro, mas apenas um como motorista.
-                    </p>
-                    <AvailableGroups />
-                </div>
-            )}
 
             {/* Modal de imagem expandida */}
             {imagemExpandida && (

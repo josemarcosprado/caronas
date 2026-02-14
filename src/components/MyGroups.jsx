@@ -208,7 +208,13 @@ export default function MyGroups() {
                                                     alignItems: 'center',
                                                     padding: 'var(--space-4)',
                                                     transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                                                    cursor: 'pointer'
+                                                    cursor: 'pointer',
+                                                    borderLeft: m.is_motorista
+                                                        ? '4px solid #3b82f6'
+                                                        : '4px solid #22c55e',
+                                                    background: m.is_motorista
+                                                        ? 'linear-gradient(135deg, rgba(59,130,246,0.08), transparent)'
+                                                        : 'linear-gradient(135deg, rgba(34,197,94,0.08), transparent)'
                                                 }}
                                                 onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)'; }}
                                                 onMouseOut={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
