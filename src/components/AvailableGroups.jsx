@@ -366,30 +366,45 @@ export default function AvailableGroups() {
 
             {/* Search & Sort Controls */}
             <div style={{
-                marginBottom: '1rem',
+                marginBottom: 'var(--space-4)',
                 display: 'flex',
-                gap: '0.5rem',
+                gap: 'var(--space-3)',
                 flexWrap: 'wrap'
             }}>
-                <input
-                    type="text"
-                    placeholder="🔍 Buscar por nome ou bairro..."
-                    className="form-input"
-                    style={{ flex: 1, minWidth: '200px' }}
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                />
+                <div style={{ flex: '1 1 200px', position: 'relative' }}>
+                    <span style={{
+                        position: 'absolute',
+                        left: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        fontSize: '1.2rem'
+                    }}>🔍</span>
+                    <input
+                        type="text"
+                        placeholder="Buscar por nome ou bairro..."
+                        className="form-input"
+                        style={{
+                            paddingLeft: '40px',
+                            width: '100%',
+                            height: '42px'
+                        }}
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                    />
+                </div>
 
-                <select
-                    className="form-input"
-                    style={{ width: 'auto' }}
-                    value={sortBy}
-                    onChange={e => setSortBy(e.target.value)}
-                >
-                    <option value="relevance">Meus Grupos</option>
-                    <option value="price_asc">💲 Preço (Menor)</option>
-                    <option value="time_asc">🕐 Horário (Cedo)</option>
-                </select>
+                <div style={{ flex: '0 1 180px', minWidth: '150px' }}>
+                    <select
+                        className="form-input"
+                        style={{ height: '42px', width: '100%', cursor: 'pointer' }}
+                        value={sortBy}
+                        onChange={e => setSortBy(e.target.value)}
+                    >
+                        <option value="relevance">✨ Relevância</option>
+                        <option value="price_asc">💲 Preço (Menor)</option>
+                        <option value="time_asc">⏰ Horário (Cedo)</option>
+                    </select>
+                </div>
             </div>
 
             {/* Lista de Grupos */}
