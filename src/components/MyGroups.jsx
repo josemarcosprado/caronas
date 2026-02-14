@@ -81,26 +81,26 @@ export default function MyGroups() {
                 const fileName = `${user.id}-${Date.now()}.${fileExt}`;
                 const filePath = `${fileName}`;
 
-                const { error: uploadError } = await supabase.storage
-                    .from('avatars')
-                    .upload(filePath, perfilEdit.avatarFile);
+                console.log('[PERFIL] Uploading avatar...', { filePath, fileSize: perfilEdit.avatarFile.size, fileType: perfilEdit.avatarFile.type });
 
-                if (uploadError) throw uploadError;
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('avatars')
+                    .upload(filePath, perfilEdit.avatarFile, { upsert: true });
+
+                console.log('[PERFIL] Upload result:', { uploadData, uploadError });
+
+                if (uploadError) {
+                    console.error('[PERFIL] Upload FAILED:', uploadError);
+                    throw uploadError;
+                }
 
                 const { data: urlData } = supabase.storage
                     .from('avatars')
                     .getPublicUrl(filePath);
 
                 avatarUrl = urlData.publicUrl;
+                console.log('[PERFIL] Avatar URL:', avatarUrl);
             }
-
-            // Only update if url changed (or if it's the existing one, we just keep it)
-            // But here we are just constructing the update object.
-            // If the user didn't change the avatar, avatarUrl is the initial preview (URL or null)
-            // Ideally we only update if it's a new file. 
-            // However, simplicity: update everything.
-            // If avatarPreview is a blob URL (starts with blob:), we MUST have uploaded it above and got a public URL.
-            // If it's an http URL, it's existing.
 
             const updateData = {
                 nome: perfilEdit.nome,
@@ -113,16 +113,21 @@ export default function MyGroups() {
                 updateData.avatar_url = avatarUrl;
             }
 
-            const { error } = await supabase
+            console.log('[PERFIL] Updating usuarios table...', { userId: user.id, updateData });
+
+            const { data: updateResult, error } = await supabase
                 .from('usuarios')
                 .update(updateData)
-                .eq('id', user.id);
+                .eq('id', user.id)
+                .select();
+
+            console.log('[PERFIL] Update result:', { updateResult, error });
 
             if (error) throw error;
             await refreshSession();
             alert('Perfil atualizado com sucesso!');
         } catch (err) {
-            console.error(err);
+            console.error('[PERFIL] ERROR:', err);
             alert('Erro ao salvar perfil: ' + err.message);
         } finally {
             setSavingProfile(false);
@@ -217,7 +222,19 @@ export default function MyGroups() {
                 >
                     👤 Meu Perfil
                 </button>
+                <button
+                    className={`btn ${activeSection === 'agenda' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ fontSize: 'var(--font-size-sm)', padding: '8px 16px' }}
+                    onClick={() => setActiveSection('agenda')}
+                >
+                    📅 Minha Agenda
+                </button>
             </div>
+
+            {/* ===== MINHA AGENDA SECTION ===== */}
+            {activeSection === 'agenda' && (
+                <MinhaAgenda user={user} meusGrupos={meusGrupos} />
+            )}
 
             {/* ===== GRUPOS SECTION ===== */}
             {activeSection === 'grupos' && (
@@ -485,6 +502,131 @@ export default function MyGroups() {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+function MinhaAgenda({ user, meusGrupos }) {
+    const [agenda, setAgenda] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const loadAgenda = async () => {
+            if (!meusGrupos.length) {
+                setLoading(false);
+                return;
+            }
+
+            const grupoIds = meusGrupos.map(m => m.grupo_id);
+            const hoje = new Date().toISOString().split('T')[0];
+            const nextWeek = new Date();
+            nextWeek.setDate(nextWeek.getDate() + 7);
+            const nextWeekStr = nextWeek.toISOString().split('T')[0];
+
+            const { data, error } = await supabase
+                .from('viagens')
+                .select(`
+                    *,
+                    grupos (id, nome)
+                `)
+                .in('grupo_id', grupoIds)
+                .gte('data', hoje)
+                .lte('data', nextWeekStr)
+                .order('data', { ascending: true })
+                .order('horario_partida', { ascending: true });
+
+            if (error) {
+                console.error('Erro ao carregar agenda:', error);
+            } else {
+                setAgenda(data || []);
+            }
+            setLoading(false);
+        };
+
+        loadAgenda();
+    }, [meusGrupos]);
+
+    if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>Carregando agenda...</div>;
+
+    if (agenda.length === 0) {
+        return (
+            <div className="card" style={{ padding: 'var(--space-6)', textAlign: 'center' }}>
+                <h3>📅 Nenhuma viagem agendada</h3>
+                <p style={{ color: 'var(--text-muted)' }}>
+                    Você não tem caronas agendadas para os próximos 7 dias.
+                </p>
+            </div>
+        );
+    }
+
+    // Group by date
+    const grouped = agenda.reduce((acc, viagem) => {
+        const data = viagem.data;
+        if (!acc[data]) acc[data] = [];
+        acc[data].push(viagem);
+        return acc;
+    }, {});
+
+    const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            {Object.entries(grouped).map(([data, viagens]) => {
+                const dateObj = new Date(data + 'T12:00:00'); // Force noon to avoid timezone issues
+                const diaNome = diasSemana[dateObj.getDay()];
+                const dataFormatada = dateObj.toLocaleDateString('pt-BR');
+
+                return (
+                    <div key={data} className="card">
+                        <div style={{
+                            padding: 'var(--space-3)',
+                            borderBottom: '1px solid var(--border-color)',
+                            fontWeight: 'bold',
+                            background: 'var(--surface-hover)'
+                        }}>
+                            {diaNome}, {dataFormatada}
+                        </div>
+                        <div>
+                            {viagens.map(v => (
+                                <div key={v.id} style={{
+                                    padding: 'var(--space-3)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 'var(--space-3)',
+                                    borderBottom: '1px solid var(--border-color)'
+                                }}>
+                                    <div style={{
+                                        fontSize: '1.2rem',
+                                        background: v.tipo === 'ida' ? '#e0f2fe' : '#f0fdf4',
+                                        padding: '8px',
+                                        borderRadius: '8px'
+                                    }}>
+                                        {v.tipo === 'ida' ? '🌅' : '🌙'}
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 600 }}>
+                                            {v.horario_partida?.slice(0, 5)} - {v.grupos?.nome}
+                                        </div>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                            {v.tipo === 'ida' ? 'Ida para UFS' : 'Volta da UFS'}
+                                            Build Status: {v.status}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <Link
+                                            to={`/g/${v.grupo_id}`}
+                                            className="btn btn-secondary"
+                                            style={{ fontSize: '0.8rem', padding: '4px 10px' }}
+                                        >
+                                            Ver
+                                        </Link>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }

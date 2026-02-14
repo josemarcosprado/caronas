@@ -74,7 +74,7 @@ export default function Dashboard({ isAdmin = false }) {
             // Buscar membros aprovados (JOIN com usuarios para nome/telefone)
             const { data: membrosData, error: membrosError } = await supabase
                 .from('membros')
-                .select('*, usuarios(nome, telefone, matricula, cnh_url, bairro)')
+                .select('*, usuarios(nome, telefone, matricula, cnh_url, bairro, avatar_url)')
                 .eq('grupo_id', grupoId)
                 .eq('ativo', true)
                 .eq('status_aprovacao', 'aprovado')
@@ -98,7 +98,7 @@ export default function Dashboard({ isAdmin = false }) {
             if (canEdit) {
                 const { data: pendentesData } = await supabase
                     .from('membros')
-                    .select('*, usuarios(nome, telefone, matricula, cnh_url, bairro)')
+                    .select('*, usuarios(nome, telefone, matricula, cnh_url, bairro, avatar_url)')
 
                     .eq('grupo_id', grupoId)
                     .eq('status_aprovacao', 'pendente')
@@ -1391,9 +1391,24 @@ export default function Dashboard({ isAdmin = false }) {
                                 return (
                                     <div key={membro.id} className="member-item" style={isMe ? { borderLeft: '3px solid var(--primary)', paddingLeft: 'var(--space-2)' } : {}}>
                                         <div className={`member-avatar ${membro.is_motorista ? 'driver' : 'confirmed'}`}
-                                            style={!membro.is_motorista ? { background: 'var(--accent-primary)', color: 'white', opacity: 0.8 } : { background: 'var(--accent-secondary)', color: 'white' }}
+                                            style={{
+                                                ...(!membro.is_motorista ? { background: 'var(--accent-primary)', color: 'white', opacity: 0.8 } : { background: 'var(--accent-secondary)', color: 'white' }),
+                                                overflow: 'hidden',
+                                                padding: 0,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
                                         >
-                                            {iniciais}
+                                            {membro.usuarios?.avatar_url ? (
+                                                <img
+                                                    src={membro.usuarios.avatar_url}
+                                                    alt={membro.nome}
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                />
+                                            ) : (
+                                                iniciais
+                                            )}
                                         </div>
                                         <div className="member-info" style={{ flex: 1 }}>
                                             <div className="member-name">

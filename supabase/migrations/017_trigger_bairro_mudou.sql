@@ -14,7 +14,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Dropar trigger se existir para evitar duplicação em re-runs
 DROP TRIGGER IF EXISTS on_bairro_change ON usuarios;
